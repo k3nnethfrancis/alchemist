@@ -9,8 +9,8 @@ import logging
 from typing import Dict, Any, Optional
 from discord import Message
 
-from eliza_agent.memory.message_history import MessageHistory
-from eliza_agent.memory.agent_knowledge import AgentKnowledge
+from eliza.memory.message_history import MessageHistory
+from eliza.memory.agent_knowledge import AgentKnowledge
 from core.models.types import RuntimeConfig
 
 logger = logging.getLogger(__name__)

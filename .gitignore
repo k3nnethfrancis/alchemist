@@ -1,3 +1,15 @@
 __pycache__/
 venv/
 .env
+.arxiv/
+.ruff_cache/
+.venv/
+.lilypad/
+cooldowns.db
+memory.db
+.cursorrules
+agent.txt
+worldsim.txt
+.DS_Store
+*.log
+*.txt

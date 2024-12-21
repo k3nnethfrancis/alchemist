@@ -13,8 +13,8 @@ from mirascope.core import (
     openai,
     BaseDynamicConfig
 )
-from agents.persona_agent import PersonaAgent
-from agents.terminal_agent import TerminalAgent
+from agents.terminal.persona_agent import PersonaAgent
+from agents.terminal.terminal_agent import TerminalAgent
 
 class SessionManager(BaseModel):
     """

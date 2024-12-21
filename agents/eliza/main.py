@@ -8,8 +8,8 @@ import logging
 import asyncio
 from dotenv import load_dotenv
 import discord
-from eliza_agent.agent_runtime import AgentRuntime
-from eliza_agent.discord_client import DiscordClient
+from eliza.agent_runtime import AgentRuntime
+from eliza.discord_client import DiscordClient
 import json
 
 # Load environment variables

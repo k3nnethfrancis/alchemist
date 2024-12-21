@@ -14,7 +14,7 @@ import discord
 from discord.ext import commands
 from typing import Optional
 
-from eliza_agent.agent_runtime import AgentRuntime
+from eliza.agent_runtime import AgentRuntime
 
 logger = logging.getLogger(__name__)
 

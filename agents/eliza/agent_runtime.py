@@ -8,7 +8,7 @@ from typing import Optional, Dict, Any
 import discord
 import asyncio
 from mirascope.core import Messages, prompt_template, openai
-from eliza_agent.memory.message_history import MessageHistory
+from eliza.memory.message_history import MessageHistory
 
 logger = logging.getLogger(__name__)
 
