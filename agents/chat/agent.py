@@ -5,7 +5,7 @@ This module implements a ChatAgent class that processes queries using both OpenA
 Anthropic models, maintains conversation history, and executes tools like image generation.
 """
 
-from typing import Optional, Union
+from typing import Optional, Union, Any
 
 from mirascope.core import (
     BaseDynamicConfig,
@@ -15,16 +15,10 @@ from mirascope.core import (
 )
 from pydantic import BaseModel, Field
 
-# import lilypad
-
 from agents.chat.tools import ImageGenerator
 from agents.chat.prompts.base import create_system_prompt, PersonaConfig
 from agents.chat.prompts.persona import AUG_E
-
-import logging
-
-logger = logging.getLogger(__name__)
-
+from core.logger import log_session
 
 class ChatAgent(BaseModel):
     """
@@ -34,25 +28,27 @@ class ChatAgent(BaseModel):
         history (list): List of conversation history entries
         provider (str): The LLM provider to use ('openai' or 'anthropic')
         generated_images (list): Store generated image data
-        persona (PersonaConfig): Configuration for the agent's persona
     """
+    
+    model_config = {
+        "arbitrary_types_allowed": True
+    }
     
     history: list[Union[openai.OpenAIMessageParam, anthropic.AnthropicMessageParam]] = []
     provider: str = Field(default="anthropic")
     generated_images: list[dict] = Field(default_factory=list)
-    
+
     def __init__(self, provider: str = "anthropic", **data):
-        # Create persona config first
-        persona = PersonaConfig(**AUG_E)
-        
         # Initialize base model
         super().__init__(provider=provider, **data)
+        
+        # Create persona config first
+        persona = PersonaConfig(**AUG_E)
         
         # Initialize system prompt with persona
         system_prompt = BaseMessageParam(**create_system_prompt(persona))
         self.history.append(system_prompt)
 
-    # @lilypad.generation()
     @anthropic.call("claude-3-5-sonnet-20241022", tools=[ImageGenerator])
     def _call_anthropic(self, query: str) -> BaseDynamicConfig:
         """Process query using Anthropic's Claude model."""
@@ -63,7 +59,6 @@ class ChatAgent(BaseModel):
             messages.append(BaseMessageParam(role="user", content=query))
         return {"messages": messages}
 
-    # @lilypad.generation()
     @openai.call("gpt-4o-mini", tools=[ImageGenerator])
     def _call_openai(self, query: str) -> BaseDynamicConfig:
         """Process query using OpenAI's GPT-4 model."""
@@ -94,17 +89,9 @@ class ChatAgent(BaseModel):
         else:
             return f"Image generation failed: {tool_output['message']}"
 
-    def _step(self, query: str) -> str:
-        """
-        Process a single conversation step.
-        
-        Args:
-            query: The user's input query
-            
-        Returns:
-            str: The agent's response
-        """
-        # Add user query to history if it exists
+    async def _step(self, query: str) -> str:
+        """Process a single conversation step."""
+        # Add user query to history using BaseMessageParam
         if query:
             self.history.append(BaseMessageParam(role="user", content=query))
         
@@ -117,20 +104,19 @@ class ChatAgent(BaseModel):
         # Handle tools if present
         tools_and_outputs = []
         if tool := response.tool:
-            logger.info(f"[Calling Tool '{tool.__class__.__name__}' with args {tool.model_dump()}]")
-            tool_output = tool.call()
+            tool_output = await tool.call()  # Now awaiting the tool call
             
-            # For image generation, store the result
             if isinstance(tool, ImageGenerator):
                 self._process_image_generation(tool_output)
                 
             tools_and_outputs.append((tool, tool_output))
             self.history += response.tool_message_params(tools_and_outputs)
-            return self._step("")  # Recursive call with empty query to continue conversation
+            return await self._step("")  # Recursive call with empty query to continue conversation
         
         return response.content
 
-    def run(self) -> None:
+    @log_session(log_dir="logs/chat")
+    async def run(self) -> None:
         """Run the chat agent in an interactive loop."""
         while True:
             query = input("User: ")
@@ -139,13 +125,20 @@ class ChatAgent(BaseModel):
                 
             print("Assistant: ", end="", flush=True)
             try:
-                response = self._step(query)
+                response = await self._step(query)
                 print(response)
             except Exception as e:
                 print(f"\nError: {str(e)}")
 
+    def get_response(self, query: str) -> str:
+        """Get initial response for a query."""
+        return self._step(query)
+
+    def process_tool_result(self, tool_output: Any) -> Optional[str]:
+        """Process tool output and get follow-up response."""
+        return self._step("")  # Empty query for tool result processing
 
 if __name__ == "__main__":
-    agent = ChatAgent(provider="openai")
-    agent.run()
-    ### tool test
+    import asyncio
+    agent = ChatAgent(provider="anthropic")
+    asyncio.run(agent.run())

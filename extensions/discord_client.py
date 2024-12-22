@@ -3,14 +3,15 @@ Discord Client Extension Module
 
 This module implements a Discord bot client that integrates with the ChatAgent system.
 It handles Discord-specific interactions and routes messages between Discord and the
-agent runtime.
+agent runtime, with special handling for tool-based conversations.
 
 Key Features:
-- Discord message handling
+- Discord message handling with typing indicators
 - Mention-based triggering
 - Message cleaning and formatting
+- Tool response aggregation
 - Asynchronous response handling
-- Clean separation from agent logic
+- Error handling and recovery
 
 Usage:
     runtime = AgentRuntime()
@@ -18,14 +19,15 @@ Usage:
     await client.start(token)
 
 Note:
-    This client is designed to be minimal and focused solely on Discord interaction
-    handling, delegating all AI/chat logic to the AgentRuntime.
+    This client is designed to handle multi-step conversations where the agent
+    may need to use tools or perform multiple actions before providing a complete
+    response.
 """
 
 import logging
 import discord
 from discord.ext import commands
-from typing import Optional
+from typing import Optional, List
 
 logger = logging.getLogger(__name__)
 
@@ -38,9 +40,12 @@ class DiscordClient(commands.Bot):
     interactions and maintains a clean separation between Discord handling and
     agent logic.
 
+    The client is specifically designed to handle tool-based conversations where
+    multiple responses may be generated during a single interaction.
+
     Attributes:
         agent_runtime: The runtime instance that manages the ChatAgent.
-                      Must implement a 'get_response' method.
+                      Must implement get_response and process_tool_result methods.
     """
 
     def __init__(self, agent_runtime, intents: discord.Intents, token: str, command_prefix: str = "!"):
@@ -59,7 +64,7 @@ class DiscordClient(commands.Bot):
         """
         super().__init__(command_prefix=command_prefix, intents=intents)
         self.agent_runtime = agent_runtime
-        self.token = token  # Store token for start method
+        self.token = token
 
     async def on_ready(self):
         """
@@ -78,12 +83,11 @@ class DiscordClient(commands.Bot):
         """
         Event handler for processing new Discord messages.
 
-        This method:
-        1. Filters out self-messages
-        2. Checks for bot mentions
-        3. Cleans message content
-        4. Gets agent responses
-        5. Sends responses back to Discord
+        Handles the complete conversation flow including:
+        1. Message filtering and cleaning
+        2. Initial response generation
+        3. Tool execution and follow-up responses
+        4. Error handling and recovery
 
         Args:
             message (discord.Message): The Discord message to process.
@@ -91,23 +95,37 @@ class DiscordClient(commands.Bot):
         Note:
             Only responds to messages where the bot is mentioned.
             Ignores messages from the bot itself to prevent loops.
+            Shows typing indicator during processing.
         """
         # Ignore messages from ourselves
         if message.author.id == self.user.id:
             return
 
-        # Simple mention check: If the bot is mentioned, respond
+        # Only respond to mentions
         if self.user.mentioned_in(message):
-            # Get the raw message content minus the mention
+            # Clean the message content
             cleaned_content = message.content.replace(f"@{self.user.name}", "").strip()
-
-            # Obtain a response from our agent runtime
-            agent_response = self.agent_runtime.get_response(cleaned_content)
-
-            # Send the agent's message back to Discord
-            if agent_response:
-                await message.channel.send(agent_response)
+            
+            # Show typing indicator during processing
+            async with message.channel.typing():
+                try:
+                    # Get initial response - now properly awaited
+                    response = await self.agent_runtime.get_response(cleaned_content)
+                    if response:
+                        await message.channel.send(response)
+                        
+                except Exception as e:
+                    logger.error("Error processing message: %s", str(e))
+                    await message.channel.send(
+                        "I apologize, but I encountered an error while processing your message. "
+                        "Please try again or rephrase your request."
+                    )
 
     async def start(self):
-        """Start the Discord client with the stored token."""
+        """
+        Start the Discord client with the stored token.
+        
+        This method initializes the connection to Discord and begins
+        processing events.
+        """
         await super().start(self.token)

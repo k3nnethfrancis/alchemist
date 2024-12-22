@@ -22,9 +22,13 @@ Usage:
 """
 
 import logging
+from datetime import datetime
+from pathlib import Path
 from typing import Literal, Optional, Any
-from pydantic import BaseModel
+from uuid import uuid4
+from pydantic import BaseModel, Field
 
+from core.logger import log_session
 from agents.chat.agent import ChatAgent
 from extensions.discord_client import DiscordClient
 # Future imports for other agents and extensions
@@ -34,6 +38,13 @@ from extensions.discord_client import DiscordClient
 
 logger = logging.getLogger(__name__)
 
+class RuntimeSession(BaseModel):
+    """Track runtime session data."""
+    session_id: str = Field(default_factory=lambda: str(uuid4()))
+    start_time: datetime = Field(default_factory=datetime.now)
+    interface: str
+    messages: list = Field(default_factory=list)
+
 class RuntimeConfig(BaseModel):
     """Configuration for the runtime environment."""
     agent_type: Literal["chat"]  # Add more types as developed
@@ -41,6 +52,7 @@ class RuntimeConfig(BaseModel):
     provider: Literal["openai", "anthropic"]
     model: str
     extension_config: Optional[dict[str, Any]] = None
+    log_dir: str = Field(default="data/sessions")
 
 class AgentRuntime:
     """
@@ -63,6 +75,23 @@ class AgentRuntime:
         self.config = config
         self.agent = self._initialize_agent()
         self.extension = self._initialize_extension()
+        self.current_session: Optional[RuntimeSession] = None
+        
+    def _start_session(self, interface: str) -> None:
+        """Start a new runtime session."""
+        self.current_session = RuntimeSession(interface=interface)
+        logger.info(f"Started new session {self.current_session.session_id}")
+
+    def _end_session(self) -> None:
+        """End current session and log it."""
+        if self.current_session:
+            log_path = Path(self.config.log_dir) / self.current_session.interface / f"{self.current_session.session_id}.json"
+            log_session(
+                session=self.current_session,
+                agent=self.agent,
+                log_path=log_path
+            )
+            self.current_session = None
 
     def _initialize_agent(self) -> Any:
         """Initialize the appropriate agent based on configuration."""
@@ -82,29 +111,41 @@ class AgentRuntime:
             )
         raise ValueError(f"Unsupported extension: {self.config.extension}")
 
-    def get_response(self, message: str) -> str:
+    async def get_response(self, message: str) -> str:
         """Process a message through the configured agent."""
+        if not self.current_session:
+            self._start_session(self.config.extension)
+            
         if not message.strip():
             return ""
         
-        logger.debug("AgentRuntime received message: '%s'", message)
+        # Log incoming message
+        if self.current_session:
+            self.current_session.messages.append({
+                "role": "user",
+                "content": message,
+                "timestamp": datetime.now().isoformat()
+            })
         
-        # Get response from agent
-        response = self.agent._step(message)
+        # Get response from agent - now properly awaited
+        response = await self.agent._step(message)
         
-        # Log the agent's history to debug tool usage
-        for msg in self.agent.history[-3:]:  # Last 3 messages
-            logger.debug("History entry: %s", msg)
-        
-        # Log any generated images
-        if self.agent.generated_images:
-            logger.debug("Generated images: %s", self.agent.generated_images)
+        # Log response
+        if self.current_session:
+            self.current_session.messages.append({
+                "role": "assistant",
+                "content": response,
+                "timestamp": datetime.now().isoformat()
+            })
         
         return response
 
     async def start(self) -> None:
         """Start the runtime with the configured extension."""
-        if self.config.extension == "discord":
-            await self.extension.start()
-        else:
-            raise ValueError(f"Unsupported extension: {self.config.extension}")
+        try:
+            if self.config.extension == "discord":
+                await self.extension.start()
+            else:
+                raise ValueError(f"Unsupported extension: {self.config.extension}")
+        finally:
+            self._end_session()

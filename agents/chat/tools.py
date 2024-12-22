@@ -11,10 +11,9 @@ OpenAI and Anthropic providers.
 
 from typing import Literal
 import logging
-
+import asyncio
+from openai import AsyncOpenAI
 from mirascope.core import BaseTool
-from openai import OpenAI
-from pydantic import Field
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -27,56 +26,55 @@ logger.addHandler(handler)
 
 class ImageGenerator(BaseTool):
     """
-    A tool for generating images using DALL-E 3. ALWAYS PROVIDE THE URL TO THE USER.
+    Asynchronous image generation tool using DALL-E.
     
     Attributes:
-        prompt (str): The description of the image to generate
+        prompt (str): The prompt to generate an image from
     """
-
-    prompt: str = Field(
-        ...,
-        description="Description of the image to generate"
-    )
-
-    def call(self) -> dict:
+    
+    prompt: str
+    
+    async def call(self) -> dict:
         """
-        Generate an image using DALL-E 3.
+        Generate an image asynchronously based on the provided prompt.
         
         Returns:
-            dict: Contains the image URL and generation status
+            dict: Contains status, url (if successful), and any relevant messages
         """
-        logger.info(f"ImageGenerator.call() - Starting image generation with prompt: {self.prompt}")
         try:
-            client = OpenAI()
-            formatted_prompt = (
-                f"{self.prompt}. "
-                "Blend the styles of Mobeus, solarpunk, and 70s sci-fi pulp."
-            )
+            client = AsyncOpenAI()
             
-            logger.debug(f"Sending request to DALL-E with formatted prompt: {formatted_prompt}")
-            response = client.images.generate(
+            logger.info(f"Generating image with prompt: {self.prompt}")
+            
+            response = await client.images.generate(
                 model="dall-e-3",
-                prompt=formatted_prompt,
+                prompt=self.formatted_prompt,
+                size="1024x1024",
+                quality="standard",
                 n=1,
             )
             
-            url = response.data[0].url
-            logger.info(f"Successfully generated image: {url}")
+            image_url = response.data[0].url
+            logger.info(f"Successfully generated image: {image_url}")
+            
             return {
                 "status": "success",
-                "url": url,
+                "url": image_url,
                 "prompt": self.prompt
             }
             
         except Exception as e:
-            error_msg = f"Sorry, I couldn't generate that image: {str(e)}"
-            logger.error(f"Image generation failed: {str(e)}", exc_info=True)
+            logger.error(f"Failed to generate image: {str(e)}")
             return {
                 "status": "error",
-                "message": error_msg,
+                "message": str(e),
                 "prompt": self.prompt
             }
 
+    @property
+    def formatted_prompt(self) -> str:
+        """Format the prompt with style guidelines."""
+        return f"{self.prompt}. Blend the styles of Mobeus, solarpunk, and 70s sci-fi pulp."
 
 # Example usage and testing
 if __name__ == "__main__":
