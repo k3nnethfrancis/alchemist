@@ -18,7 +18,7 @@ from pydantic import BaseModel, Field
 from agents.chat.tools import ImageGenerator
 from agents.chat.prompts.base import create_system_prompt, PersonaConfig
 from agents.chat.prompts.persona import AUG_E
-from core.logger import log_session
+from core.logger import log_run
 
 class ChatAgent(BaseModel):
     """
@@ -115,7 +115,7 @@ class ChatAgent(BaseModel):
         
         return response.content
 
-    @log_session(log_dir="logs/chat")
+    @log_run(log_dir="logs/chat")
     async def run(self) -> None:
         """Run the chat agent in an interactive loop."""
         while True:

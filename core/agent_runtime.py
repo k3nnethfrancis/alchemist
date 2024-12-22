@@ -10,6 +10,7 @@ Key Features:
 - Provides a clean interface for different frontend extensions
 - Supports multiple agent configurations
 - Centralizes agent management logic
+- Step-by-step logging of interactions
 
 Usage:
     runtime = AgentRuntime(
@@ -28,13 +29,9 @@ from typing import Literal, Optional, Any
 from uuid import uuid4
 from pydantic import BaseModel, Field
 
-from core.logger import log_session
+from core.logger import log_step
 from agents.chat.agent import ChatAgent
 from extensions.discord_client import DiscordClient
-# Future imports for other agents and extensions
-# from agents.workflow.agent import WorkflowAgent
-# from extensions.slack_client import SlackClient
-# etc.
 
 logger = logging.getLogger(__name__)
 
@@ -62,6 +59,7 @@ class AgentRuntime:
     1. Agent initialization and configuration
     2. Extension setup and routing
     3. Runtime lifecycle management
+    4. Step-by-step interaction logging
     """
 
     def __init__(self, config: RuntimeConfig):
@@ -82,37 +80,31 @@ class AgentRuntime:
         self.current_session = RuntimeSession(interface=interface)
         logger.info(f"Started new session {self.current_session.session_id}")
 
-    def _end_session(self) -> None:
-        """End current session and log it."""
-        if self.current_session:
-            log_path = Path(self.config.log_dir) / self.current_session.interface / f"{self.current_session.session_id}.json"
-            log_session(
-                session=self.current_session,
-                agent=self.agent,
-                log_path=log_path
-            )
-            self.current_session = None
+    async def start(self) -> None:
+        """Start the runtime with the configured extension."""
+        try:
+            if self.config.extension == "discord":
+                await self.extension.start()
+            else:
+                raise ValueError(f"Unsupported extension: {self.config.extension}")
+        finally:
+            if self.current_session:
+                self.current_session = None
 
-    def _initialize_agent(self) -> Any:
-        """Initialize the appropriate agent based on configuration."""
-        if self.config.agent_type == "chat":
-            return ChatAgent(
-                provider=self.config.provider
-            )
-        # Add more agent types as they're developed
-        raise ValueError(f"Unsupported agent type: {self.config.agent_type}")
-
-    def _initialize_extension(self) -> Any:
-        """Initialize the appropriate extension based on configuration."""
-        if self.config.extension == "discord":
-            return DiscordClient(
-                agent_runtime=self,
-                **self.config.extension_config
-            )
-        raise ValueError(f"Unsupported extension: {self.config.extension}")
-
+    @log_step(log_dir="logs/sessions")
     async def get_response(self, message: str) -> str:
-        """Process a message through the configured agent."""
+        """
+        Process a message through the configured agent.
+        
+        Args:
+            message (str): The input message to process
+            
+        Returns:
+            str: The agent's response
+            
+        Note:
+            This method is decorated with @log_step to record each interaction
+        """
         if not self.current_session:
             self._start_session(self.config.extension)
             
@@ -127,7 +119,7 @@ class AgentRuntime:
                 "timestamp": datetime.now().isoformat()
             })
         
-        # Get response from agent - now properly awaited
+        # Get response from agent
         response = await self.agent._step(message)
         
         # Log response
@@ -140,12 +132,19 @@ class AgentRuntime:
         
         return response
 
-    async def start(self) -> None:
-        """Start the runtime with the configured extension."""
-        try:
-            if self.config.extension == "discord":
-                await self.extension.start()
-            else:
-                raise ValueError(f"Unsupported extension: {self.config.extension}")
-        finally:
-            self._end_session()
+    def _initialize_agent(self) -> Any:
+        """Initialize the appropriate agent based on configuration."""
+        if self.config.agent_type == "chat":
+            return ChatAgent(
+                provider=self.config.provider
+            )
+        raise ValueError(f"Unsupported agent type: {self.config.agent_type}")
+
+    def _initialize_extension(self) -> Any:
+        """Initialize the appropriate extension based on configuration."""
+        if self.config.extension == "discord":
+            return DiscordClient(
+                agent_runtime=self,
+                **self.config.extension_config
+            )
+        raise ValueError(f"Unsupported extension: {self.config.extension}")
