@@ -28,6 +28,7 @@ import logging
 import discord
 from discord.ext import commands
 from typing import Optional, List
+import re
 
 logger = logging.getLogger(__name__)
 
@@ -104,14 +105,25 @@ class DiscordClient(commands.Bot):
         # Only respond to mentions
         if self.user.mentioned_in(message):
             # Clean the message content
-            cleaned_content = message.content.replace(f"@{self.user.name}", "").strip()
+            cleaned_content = message.content.replace(f"<@{self.user.id}>", "").strip()
+            cleaned_content = re.sub(r'<@!?[0-9]+>', '', cleaned_content).strip()
             
             # Show typing indicator during processing
             async with message.channel.typing():
                 try:
-                    # Get initial response - now properly awaited
+                    # Get initial response
                     response = await self.agent_runtime.get_response(cleaned_content)
-                    if response:
+                    
+                    # Handle long responses
+                    if len(response) > 2000:
+                        # Split into chunks of 2000 characters
+                        chunks = [response[i:i + 1900] for i in range(0, len(response), 1900)]
+                        for i, chunk in enumerate(chunks):
+                            if i == 0:
+                                await message.channel.send(chunk)
+                            else:
+                                await message.channel.send(f"...{chunk}")
+                    else:
                         await message.channel.send(response)
                         
                 except Exception as e:

@@ -4,101 +4,62 @@ Chat Agent Tools Module
 This module provides tools for the ChatAgent, including:
 - Image generation via DALL-E 3
 - Future tools will be added here
-
-Each tool follows Mirascope's BaseTool pattern and can be used with both
-OpenAI and Anthropic providers.
 """
 
-from typing import Literal
 import logging
-import asyncio
+from typing import Optional
 from openai import AsyncOpenAI
 from mirascope.core import BaseTool
+from pydantic import Field
 
 # Configure logging
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.DEBUG)
-handler = logging.StreamHandler()
-handler.setFormatter(logging.Formatter(
-    '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-))
-logger.addHandler(handler)
 
-class ImageGenerator(BaseTool):
-    """
-    Asynchronous image generation tool using DALL-E.
+class ImageGenerationTool(BaseTool):
+    """Tool for generating images using DALL-E 3."""
     
-    Attributes:
-        prompt (str): The prompt to generate an image from
-    """
+    prompt: str = Field(..., description="The description of the image to generate")
+    style_guide: str = Field(
+        default="Blend the styles of Mobeus, solarpunk, and 70s sci-fi pulp",
+        description="Style guide for the image"
+    )
     
-    prompt: str
-    
-    async def call(self) -> dict:
+    async def call(self) -> str:
         """
-        Generate an image asynchronously based on the provided prompt.
+        Generate an image using DALL-E 3.
         
         Returns:
-            dict: Contains status, url (if successful), and any relevant messages
+            str: URL of the generated image
         """
         try:
-            client = AsyncOpenAI()
-            
             logger.info(f"Generating image with prompt: {self.prompt}")
             
+            # Format prompt with style guide
+            formatted_prompt = f"{self.prompt}. {self.style_guide}"
+            logger.debug(f"Formatted prompt: {formatted_prompt}")
+            
+            # Generate image using DALL-E
+            client = AsyncOpenAI()
             response = await client.images.generate(
                 model="dall-e-3",
-                prompt=self.formatted_prompt,
+                prompt=formatted_prompt,
                 size="1024x1024",
                 quality="standard",
                 n=1,
             )
             
             image_url = response.data[0].url
-            logger.info(f"Successfully generated image: {image_url}")
+            logger.info(f"Generated image URL: {image_url}")
             
-            return {
-                "status": "success",
-                "url": image_url,
-                "prompt": self.prompt
-            }
+            return image_url
             
         except Exception as e:
-            logger.error(f"Failed to generate image: {str(e)}")
-            return {
-                "status": "error",
-                "message": str(e),
-                "prompt": self.prompt
-            }
+            logger.error(f"Image generation failed: {str(e)}")
+            raise
 
-    @property
-    def formatted_prompt(self) -> str:
-        """Format the prompt with style guidelines."""
-        return f"{self.prompt}. Blend the styles of Mobeus, solarpunk, and 70s sci-fi pulp."
 
-# Example usage and testing
+# test
 if __name__ == "__main__":
-    from mirascope.core import BaseMessageParam, openai
-
-    @openai.call("gpt-4o-mini", tools=[ImageGenerator])
-    def generate_image(prompt: str) -> list[BaseMessageParam]:
-        """Test function for image generation."""
-        logger.info(f"Testing image generation with prompt: {prompt}")
-        return [
-            BaseMessageParam(
-                role="user",
-                content=f"Generate an image with the following prompt: {prompt}"
-            )
-        ]
-
-    # Test the image generator
-    test_prompt = "A beautiful furry cat in the sun"
-    logger.info("Starting test run")
-    response = generate_image(test_prompt)
-    
-    if tool := response.tool:
-        logger.info("Tool detected in response, executing...")
-        print(tool.call())
-    else:
-        logger.info("No tool in response, printing content")
-        print(response.content)
+    import asyncio
+    tool = ImageGenerationTool(prompt="A spaceship going to the moon")
+    print(asyncio.run(tool.call()))

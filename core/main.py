@@ -36,7 +36,7 @@ def parse_args():
                       help="Type of agent to run")
     parser.add_argument("--extension", choices=["discord"], required=True,
                       help="Extension to use")
-    parser.add_argument("--provider", choices=["openai", "anthropic"], default="anthropic",
+    parser.add_argument("--provider", choices=["openai", "anthropic", "openpipe"],
                       help="LLM provider to use")
     parser.add_argument("--model", default="claude-3-5-sonnet-20240620",
                       help="Model to use")

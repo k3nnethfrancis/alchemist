@@ -46,7 +46,7 @@ class RuntimeConfig(BaseModel):
     """Configuration for the runtime environment."""
     agent_type: Literal["chat"]  # Add more types as developed
     extension: Literal["discord"]  # Add more extensions as developed
-    provider: Literal["openai", "anthropic"]
+    provider: Literal["openai", "anthropic", "openpipe"]
     model: str
     extension_config: Optional[dict[str, Any]] = None
     log_dir: str = Field(default="data/sessions")
@@ -135,6 +135,12 @@ class AgentRuntime:
     def _initialize_agent(self) -> Any:
         """Initialize the appropriate agent based on configuration."""
         if self.config.agent_type == "chat":
+            if self.config.provider not in ["openai", "anthropic", "openpipe"]:
+                raise ValueError(
+                    f"Unsupported provider: {self.config.provider}. "
+                    "Must be one of: openai, anthropic, openpipe"
+                )
+            
             return ChatAgent(
                 provider=self.config.provider
             )

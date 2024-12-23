@@ -13,3 +13,6 @@ worldsim.txt
 .DS_Store
 *.log
 *.txt
+logs/*.json
+logs/
+core/arxiv/
