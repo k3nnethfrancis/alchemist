@@ -16,3 +16,5 @@ worldsim.txt
 logs/*.json
 logs/
 core/arxiv/
+.pytest_cache/
+ai.egg-info/
