@@ -13,7 +13,7 @@ import discord
 
 from ai.agents.eliza.agent import ElizaAgent
 from core.extensions.discord.eliza_client import ElizaDiscordClient
-from core.prompts.persona import AUG_E
+from ai.prompts.persona import AUG_E
 
 # Configure logging
 logging.basicConfig(
