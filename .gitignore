@@ -75,3 +75,6 @@ htmlcov/
 
 # Documentation
 docs/_build/ 
+
+.cursorrules
+.lm-resources/
