@@ -1,19 +1,22 @@
-"""
-Eliza Discord Bot Runner
+"""Eliza Discord Bot
 
-This script sets up and runs the Eliza Discord bot.
-It handles environment setup, bot configuration, and error handling.
+This script demonstrates running the Eliza agent as a Discord bot.
+The bot uses a graph-based workflow to:
+1. Monitor chat history
+2. Analyze conversation context
+3. Generate contextually appropriate responses
 """
 
 import os
-import asyncio
-import logging
-from dotenv import load_dotenv
 import discord
+import logging
+import asyncio
+from dotenv import load_dotenv
 
-from ai.agents.eliza.agent import ElizaAgent
-from ai.core.prompts.persona import AUG_E
-from ai.core.extensions.discord.eliza_client import ElizaDiscordClient
+from alchemist.ai.agents.eliza.agent import ElizaAgent
+from alchemist.ai.prompts.persona import ELIZA
+from alchemist.core.extensions.discord.client import DiscordClient
+from alchemist.core.extensions.config import get_discord_config
 
 # Configure logging
 logging.basicConfig(
@@ -23,47 +26,33 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 async def main():
-    """Set up and run the Eliza Discord bot."""
+    """Initialize and run the Eliza Discord bot."""
     try:
         # Load environment variables
         load_dotenv()
         
-        # Verify required environment variables
-        required_vars = [
-            "DISCORD_BOT_TOKEN",
-            "OPENAI_API_KEY",
-            "ANTHROPIC_API_KEY"
-        ]
-        missing_vars = [var for var in required_vars if not os.getenv(var)]
-        if missing_vars:
-            raise ValueError(f"Missing required environment variables: {', '.join(missing_vars)}")
-        
-        # Set up Discord intents
-        intents = discord.Intents.default()
-        intents.message_content = True
-        intents.messages = True
-        intents.guilds = True
+        # Get Discord configuration
+        config = get_discord_config()
         
         # Initialize Eliza agent
         agent = ElizaAgent(
-            provider="openpipe",  # Using OpenPipe as default
-            persona=AUG_E,  # Using our techno-druid persona
-            cooldown_seconds=3,  # 3 second cooldown between checks
-            scan_interval_seconds=120  # 2 minute scan interval
+            provider="openai",  # Using OpenAI for development
+            persona=ELIZA  # Using Eliza persona
         )
         
         # Initialize Discord client
-        client = ElizaDiscordClient(
+        client = DiscordClient(
             agent=agent,
-            intents=intents,
-            token=os.getenv("DISCORD_BOT_TOKEN")
+            intents=config["intents"],
+            token=config["token"]
         )
         
-        # Start the client
+        # Start the bot
+        logger.info("Starting Eliza Discord bot...")
         await client.start()
         
     except Exception as e:
-        logger.error(f"Error running Eliza bot: {str(e)}")
+        logger.error(f"Error running Eliza Discord bot: {str(e)}")
         raise
 
 if __name__ == "__main__":
