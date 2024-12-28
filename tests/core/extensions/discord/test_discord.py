@@ -1,8 +1,9 @@
 """Test suite for Discord extension components."""
 
 import pytest
-from unittest.mock import AsyncMock, patch, MagicMock
+from unittest.mock import AsyncMock, patch, MagicMock, PropertyMock
 import discord
+from datetime import datetime
 
 from alchemist.core.extensions.config import get_discord_config, get_extension_config
 from alchemist.core.extensions.discord.client import DiscordClient
@@ -71,17 +72,43 @@ async def test_client_setup_hook(discord_client):
 @pytest.mark.asyncio
 async def test_client_on_ready(discord_client):
     """Test client ready event."""
-    discord_client.user = MagicMock()
-    discord_client.user.name = "TestBot"
-    discord_client.user.id = "789"
+    # Create a mock user
+    mock_user = MagicMock(spec=discord.User)
+    mock_user.name = "TestBot"
+    mock_user.id = "123456789"
+    
+    # Mock the user property
+    type(discord_client).user = PropertyMock(return_value=mock_user)
     
     with patch('logging.Logger.info') as mock_logger:
         await discord_client.on_ready()
-        mock_logger.assert_called_once()
+        mock_logger.assert_called_once_with(f"Logged in as TestBot (123456789)")
 
 @pytest.mark.asyncio
 async def test_client_message_processing(discord_client, mock_message):
     """Test message processing with different scenarios."""
+    # Create a mock user
+    mock_user = MagicMock(spec=discord.User)
+    mock_user.id = "123456789"
+    mock_user.mentioned_in = MagicMock(return_value=False)
+    
+    # Mock the user property
+    type(discord_client).user = PropertyMock(return_value=mock_user)
+    
+    # Set up mock message attributes
+    mock_message.channel.send = AsyncMock()
+    mock_message.created_at = datetime.now()
+    mock_message.content = "test message"
+    mock_message.mentions = []
+    mock_message.author.id = "123"
+    mock_message.author.name = "TestUser"
+    mock_message.channel.id = "456"
+    mock_message.channel.name = "test-channel"
+    
+    # Remove process_discord_message to test standard flow
+    delattr(discord_client.agent, 'process_discord_message')
+    discord_client.agent._step = AsyncMock(return_value="Test response")
+    
     # Test bot message
     mock_message.author.bot = True
     await discord_client.on_message(mock_message)
@@ -89,18 +116,16 @@ async def test_client_message_processing(discord_client, mock_message):
     
     # Test normal message without mention
     mock_message.author.bot = False
-    discord_client.user = MagicMock()
-    discord_client.user.mentioned_in.return_value = False
+    mock_user.mentioned_in.return_value = False
     await discord_client.on_message(mock_message)
     discord_client.agent._step.assert_not_called()
     
     # Test mention message
-    discord_client.user.mentioned_in.return_value = True
-    discord_client.user.id = "789"
-    mock_message.content = "<@789> hello"
-    discord_client.agent._step.return_value = "Test response"
+    mock_user.mentioned_in.return_value = True
+    mock_message.content = "<@123456789> hello"
     await discord_client.on_message(mock_message)
-    discord_client.agent._step.assert_called_once()
+    discord_client.agent._step.assert_called_once_with("hello")
+    mock_message.channel.send.assert_awaited_once_with("Test response")
 
 # Discord Runtime Tests
 @pytest.fixture

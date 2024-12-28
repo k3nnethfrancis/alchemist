@@ -1,0 +1,13 @@
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+python_files = "test_*.py"
+markers = [
+    "asyncio: mark test as async using asyncio",
+    "trio: mark test as async using trio",
+]
+addopts = "--asyncio-mode=auto"
+filterwarnings = [
+    "ignore::DeprecationWarning:discord.*:",
+    "ignore::DeprecationWarning:audioop.*:"
+]

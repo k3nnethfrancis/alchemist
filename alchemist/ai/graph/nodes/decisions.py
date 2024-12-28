@@ -14,12 +14,6 @@ class BinaryDecisionNode(LLMNode):
     
     prompt: str = Field(default="")
     
-    def __init__(self, **data):
-        """Initialize with required agent if not provided."""
-        if "agent" not in data:
-            data["agent"] = BaseAgent()
-        super().__init__(**data)
-    
     async def process(self, state: NodeState) -> Optional[str]:
         """Process state and return yes/no path."""
         try:
@@ -32,13 +26,11 @@ class BinaryDecisionNode(LLMNode):
                 logger.debug(f"Available context: {state.context.metadata}")
                 return self.next_nodes.get("error")
             
-            # Get LLM decision
-            messages = [
-                {"role": "system", "content": "You are making a yes/no decision. Respond with only 'yes' or 'no'."},
-                {"role": "user", "content": formatted_prompt}
-            ]
+            # Get LLM decision using base class method
+            system_prompt = "You are making a yes/no decision. Respond with only 'yes' or 'no'."
+            full_prompt = f"{system_prompt}\n\n{formatted_prompt}"
             
-            response = await self._call_llm(messages)
+            response = await self.agent.get_response(full_prompt)
             if not response:
                 logger.error("No response from LLM")
                 return self.next_nodes.get("error")
