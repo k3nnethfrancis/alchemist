@@ -19,10 +19,7 @@ import inspect
 
 # Create OpenPipe-specific configuration
 class OpenPipeCallParams(OpenAICallParams):
-    """Parameters for OpenPipe API calls."""
-    stream: bool = False  # Disable streaming by default
-    temperature: NotRequired[float]
-    max_tokens: NotRequired[int]
+    """Class for managing OpenPipe API calls with Mirascope."""
 
 def setup_openpipe_call(*args, **kwargs):
     """Wrapper around OpenAI's setup_call that ensures OpenPipe client is used."""
