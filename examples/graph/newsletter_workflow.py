@@ -11,9 +11,10 @@ from alchemist.ai.graph.base import Graph, NodeState, NodeContext
 from alchemist.ai.graph.nodes.base import LLMNode
 from alchemist.ai.graph.nodes.decisions import BinaryDecisionNode
 from alchemist.ai.base.agent import BaseAgent
-from alchemist.ai.prompts.persona import AUG_E, KEN_E
+from alchemist.ai.prompts.persona import KEN_E
 from alchemist.core.extensions.discord.runtime import DiscordRuntime
 from alchemist.ai.base.runtime import RuntimeConfig
+from alchemist.ai.prompts.base import PersonaConfig
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -446,8 +447,9 @@ async def create_newsletter_workflow(*, additional_context: str = "") -> Graph:
     """
     logger.info("Creating newsletter workflow...")
     
-    # Create agent
-    agent = BaseAgent(provider="openpipe", persona=PERSONA)
+    # Convert PERSONA dict to PersonaConfig
+    persona = PersonaConfig(**PERSONA)
+    agent = BaseAgent(provider="openpipe", persona=persona)
     
     # Create nodes
     collect = ContentCollectorNode(

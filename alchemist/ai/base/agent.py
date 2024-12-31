@@ -17,7 +17,7 @@ from pydantic import BaseModel, Field
 
 from alchemist.ai.base.tools import ImageGenerationTool
 from alchemist.ai.prompts.base import create_system_prompt, PersonaConfig
-from alchemist.ai.prompts.persona import AUG_E
+from alchemist.ai.prompts.persona import BASE_ASSISTANT
 from alchemist.core.logger import log_run
 
 import logging
@@ -30,6 +30,7 @@ class BaseAgent(BaseModel):
     Attributes:
         history (list): List of conversation history entries
         provider (str): The LLM provider to use ('openai', 'anthropic', or 'openpipe')
+        persona (Optional[PersonaConfig]): The agent's persona configuration
     """
     
     model_config = {
@@ -38,10 +39,16 @@ class BaseAgent(BaseModel):
     
     history: list[Union[openai.OpenAIMessageParam, anthropic.AnthropicMessageParam, OpenPipeMessageParam]] = []
     provider: str = Field(default="openai")
+    persona: Optional[PersonaConfig] = None
 
-    def __init__(self, provider: str = "openai", **data):
-        super().__init__(provider=provider, **data)
-        persona = PersonaConfig(**AUG_E)
+    def __init__(self, provider: str = "openai", persona: Optional[PersonaConfig] = None, **data):
+        if not persona:
+            logger.warning(
+                "No persona configuration provided. Falling back to BASE_ASSISTANT persona. "
+                "To use a specific persona, pass a PersonaConfig instance to the constructor."
+            )
+            persona = PersonaConfig(**BASE_ASSISTANT)
+        super().__init__(provider=provider, persona=persona, **data)
         system_prompt = BaseMessageParam(**create_system_prompt(persona))
         self.history.append(system_prompt)
 
