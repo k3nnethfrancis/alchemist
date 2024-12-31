@@ -9,9 +9,11 @@ OpenPipeMessageParam: TypeAlias = ChatCompletionMessageParam | BaseMessageParam
 
 from mirascope.core.openai.call_response import OpenAICallResponse as OpenPipeCallResponse
 from .call import openpipe_call
+from .client import get_openpipe_client
 
 __all__ = [
     "OpenPipeCallResponse",
     "OpenPipeMessageParam",
     "openpipe_call",
+    "get_openpipe_client",
 ]
