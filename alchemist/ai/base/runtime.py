@@ -1,14 +1,16 @@
 """Base Runtime Module for Agent Execution Environments"""
 
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, Union
 from abc import ABC, abstractmethod
 from datetime import datetime
 from uuid import uuid4
 from pydantic import BaseModel, Field
 import logging
 import re
+import asyncio
 
 from alchemist.core.logger import log_step, log_run
+from alchemist.ai.prompts.base import PersonaConfig
 
 logger = logging.getLogger(__name__)
 
@@ -22,9 +24,17 @@ class Session(BaseModel):
 class RuntimeConfig(BaseModel):
     """Configuration for runtime environments."""
     provider: str = "openai"
-    persona: Dict[str, Any]
+    model: str = "gpt-4o-mini"
+    persona: Union[Dict[str, Any], PersonaConfig]  # Accept either type
     tools: list = Field(default_factory=list)
     platform_config: Dict[str, Any] = Field(default_factory=dict)
+
+    @property
+    def persona_config(self) -> PersonaConfig:
+        """Ensure persona is always a PersonaConfig object."""
+        if isinstance(self.persona, dict):
+            return PersonaConfig(**self.persona)
+        return self.persona
 
 class BaseRuntime(ABC):
     """Abstract base for all runtime environments."""
@@ -56,91 +66,56 @@ class BaseRuntime(ABC):
         pass
 
 class BaseChatRuntime(BaseRuntime):
-    """Base class for I/O chat operations."""
+    """Base class for chat-based runtime environments."""
     
-    async def process_message(self, content: str) -> str:
-        """Process a chat message."""
-        return await self.agent._step(content)
+    def _create_agent(self):
+        """Create agent instance."""
+        from alchemist.ai.base.agent import BaseAgent
+        return BaseAgent(
+            provider=self.config.provider,
+            model=self.config.model,
+            persona=self.config.persona_config,
+            tools=self.config.tools
+        )
+    
+    async def process_message(self, message: str) -> str:
+        """Process a single message and return the response."""
+        if not self.current_session:
+            self._start_session(platform="chat")
+        # Handle both async and sync _step methods
+        response = self.agent._step(message)
+        if asyncio.iscoroutine(response):
+            response = await response
+        return response
 
 class LocalRuntime(BaseChatRuntime):
     """Runtime for local console chat interactions."""
     
-    def _create_agent(self):
-        """Create agent with local-specific configuration."""
-        from alchemist.ai.base.agent import BaseAgent
-        return BaseAgent(
-            provider=self.config.provider,
-            persona=self.config.persona,
-            tools=self.config.tools
-        )
-    
-    def _format_message(self, message: str, prefix: str = "") -> str:
-        """Format message with proper line breaks and markdown-style links."""
-        # Handle image markdown links
-        message = re.sub(
-            r'!\[(.*?)\]\((.*?)\)',
-            lambda m: f"\n🖼️ Generated Image: {m.group(1)}\n{m.group(2)}\n",
-            message
-        )
-        
-        # Add prefix to first line
-        lines = message.split('\n')
-        if lines:
-            lines[0] = f"{prefix}{lines[0]}"
-            
-        # Add proper indentation to subsequent lines
-        indent = " " * len(prefix)
-        for i in range(1, len(lines)):
-            if lines[i].strip():
-                lines[i] = f"{indent}{lines[i]}"
-                
-        return "\n".join(lines)
-    
-    @log_step(log_dir="logs/chat")
-    async def process_message(self, content: str) -> str:
-        """Process and log a chat message."""
-        return await self.agent._step(content)
-    
     async def start(self) -> None:
-        """Start local chat session."""
+        """Start a local chat session."""
         self._start_session("local")
-        logger.info("Starting local chat session...")
-        
-        # Print welcome message
-        print("\n" + "="*50)
-        print(f"Starting chat with {self.config.persona.get('name', 'Assistant')}")
-        print("Type 'exit' or 'quit' to end the session")
-        print("="*50 + "\n")
+        print("\nStarting chat session. Type 'exit' or 'quit' to stop.")
         
         while True:
-            # Get user input
             try:
-                query = input("\n\033[94mYou:\033[0m ")  # Blue color for user
-                if query.lower() in ["exit", "quit"]:
+                user_input = input("\nYou: ")
+                if user_input.lower() in ['exit', 'quit']:
                     break
+                    
+                response = await self.process_message(user_input)
+                print(f"\nAssistant: {response}")
                 
-                # Process and format response
-                try:
-                    response = await self.process_message(query)
-                    formatted_response = self._format_message(
-                        response,
-                        prefix="\033[92mAssistant:\033[0m "  # Green color for assistant
-                    )
-                    print(formatted_response)
-                    
-                except Exception as e:
-                    logger.error(f"Error processing message: {str(e)}")
-                    print(f"\n\033[91mError:\033[0m {str(e)}")  # Red color for errors
-                    
             except KeyboardInterrupt:
-                print("\n\nExiting chat session...")
                 break
-                
+            except Exception as e:
+                logger.error(f"Error in chat loop: {e}")
+                print(f"\n[Error] {str(e)}")
+        
         await self.stop()
+        print("\nChat session ended. Goodbye! ✨")
     
     async def stop(self) -> None:
-        """Stop local chat session."""
-        logger.info("Stopping local chat session...")
-        print("\n" + "="*50)
-        print("Chat session ended")
-        print("="*50 + "\n")
+        """Stop the local runtime."""
+        pass
+
+__all__ = ["RuntimeConfig", "BaseRuntime", "BaseChatRuntime", "LocalRuntime"]

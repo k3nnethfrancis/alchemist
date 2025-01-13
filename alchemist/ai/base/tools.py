@@ -7,10 +7,12 @@ This module provides tools for the ChatAgent, including:
 """
 
 import logging
-from typing import Optional
+from typing import Optional, ClassVar
 from openai import AsyncOpenAI
 from mirascope.core import BaseTool
 from pydantic import Field
+import discord
+from datetime import datetime, timedelta
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -56,6 +58,42 @@ class ImageGenerationTool(BaseTool):
         except Exception as e:
             logger.error(f"Image generation failed: {str(e)}")
             raise
+
+class DiscordReaderTool(BaseTool):
+    """Tool for reading messages from Discord channels."""
+    
+    name = "read_discord_messages"
+    description = "Reads and summarizes recent messages from a Discord channel"
+    
+    def __init__(self, client: discord.Client):
+        self.client = client
+        super().__init__()
+    
+    async def _run(self, channel_name: str, days: int = 2) -> str:
+        """Read messages from a Discord channel."""
+        try:
+            # Find channel by name
+            channel = discord.utils.get(self.client.get_all_channels(), name=channel_name)
+            if not channel:
+                return f"Channel '{channel_name}' not found"
+            
+            # Use existing client method
+            messages = await self.client.fetch_channel_history(
+                channel_id=channel.id,
+                days=days
+            )
+            
+            return f"Found {len(messages)} messages:\n" + "\n".join(
+                f"{msg['author']['name']} ({datetime.fromtimestamp(msg['timestamp']).strftime('%Y-%m-%d %H:%M')}): {msg['content']}"
+                for msg in messages
+            )
+            
+        except Exception as e:
+            logger.error(f"Failed to read Discord messages: {str(e)}")
+            raise
+    
+    async def __call__(self, channel_name: str, days: int = 2) -> str:
+        return await self._run(channel_name, days)
 
 
 # test
