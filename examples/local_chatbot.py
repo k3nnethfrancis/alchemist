@@ -6,25 +6,30 @@ This example demonstrates how to set up a local chat session with a configured a
 
 import asyncio
 import logging
+from pathlib import Path
 from dotenv import load_dotenv
 
 from alchemist.ai.base.runtime import RuntimeConfig, LocalRuntime
-from alchemist.ai.prompts.persona import AUG_E
-from alchemist.ai.base.tools import ImageGenerationTool
+from alchemist.ai.prompts.persona import KEN_E, AUG_E
+from alchemist.ai.prompts.base import PersonaConfig
 
 # Configure logging
+log_dir = Path("logs")
+log_dir.mkdir(exist_ok=True)
+
 logging.basicConfig(
     level=logging.INFO,
-    format='%(message)s',  # Simplified format
+    format='%(message)s',
     handlers=[
-        logging.FileHandler('logs/alchemist.log'),  # File handler for full logs
-        logging.StreamHandler()  # Console handler for filtered logs
+        logging.FileHandler(log_dir / "alchemist.log"),
+        logging.StreamHandler()
     ]
 )
 
-# Filter out httpx logs and other noisy loggers
-logging.getLogger('httpx').setLevel(logging.WARNING)
-logging.getLogger('httpcore').setLevel(logging.WARNING)
+# Filter noisy loggers
+for logger_name in ["httpx", "httpcore"]:
+    logging.getLogger(logger_name).setLevel(logging.WARNING)
+
 logger = logging.getLogger(__name__)
 
 async def main():
@@ -33,15 +38,13 @@ async def main():
         # Load environment variables
         load_dotenv()
         
-        # Configure runtime
+        # Create runtime configuration
         config = RuntimeConfig(
             provider="openpipe",
-            persona=AUG_E,
-            tools=[ImageGenerationTool],
-            platform_config={
-                "prompt": "\n\033[94mYou:\033[0m ",  # Blue color for user
-                "response_prefix": "\033[92mAssistant:\033[0m "  # Green color for assistant
-            }
+            model="openpipe:ken0-llama31-8B-instruct",
+            persona=PersonaConfig(**KEN_E),  # Use Augie as our default persona
+            tools=[],  # Start simple without tools
+            platform_config={}  # Use default console formatting
         )
         
         # Initialize and start local runtime
@@ -49,8 +52,11 @@ async def main():
         await runtime.start()
         
     except Exception as e:
-        logger.error(f"\033[91mError:\033[0m {str(e)}")  # Red color for errors
+        logger.error(f"Error: {str(e)}")
         raise
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        print("\nChat session terminated by user.")
