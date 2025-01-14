@@ -138,7 +138,6 @@ class DiscordClient(discord.Client):
     async def start(self):
         """Start the Discord client with the stored token."""
         await super().start(self.token)
-
     async def fetch_channel_history(self, channel_id: int, days: int = 2) -> List[Dict[str, Any]]:
         """Fetch message history from a specific channel with rich metadata."""
         try:

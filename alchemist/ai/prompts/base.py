@@ -1,13 +1,16 @@
 """
 Base system prompt module for chat agents.
 
-This module defines the base system prompt template and formatting functions
-using Mirascope's prompt templating system.
+This module provides a simple, modular system for creating chat prompts using Mirascope's
+prompt templating system. It supports persona-based system messages and maintains
+conversation history.
 """
 
 from datetime import datetime
-from mirascope.core import Messages, prompt_template
-from pydantic import BaseModel
+from typing import List, Optional
+
+from mirascope.core import BaseMessageParam, Messages, prompt_template
+from pydantic import BaseModel, Field
 
 class PersonaConfig(BaseModel):
     """
@@ -22,16 +25,42 @@ class PersonaConfig(BaseModel):
         lore: List of background story elements
         style: Dictionary of style guidelines
     """
-    id: str
-    name: str
-    nickname: str | None = None
-    bio: str
-    personality: dict
-    lore: list[str]
-    style: dict
+    id: str = Field(..., description="Unique identifier for the persona")
+    name: str = Field(..., description="Full name of the persona")
+    nickname: Optional[str] = Field(None, description="Optional nickname")
+    bio: str = Field(..., description="Brief biography")
+    personality: dict = Field(..., description="Dictionary of personality traits and stats")
+    lore: List[str] = Field(..., description="List of background story elements")
+    style: dict = Field(..., description="Dictionary of style guidelines")
 
 @prompt_template()
-def create_system_prompt(persona: PersonaConfig) -> dict:
+def create_chat_prompt(
+    system_content: str,
+    query: str,
+    history: Optional[List[BaseMessageParam]] = None
+) -> List[BaseMessageParam]:
+    """
+    Creates a complete chat prompt with system, history, and user messages.
+    
+    Args:
+        system_content: The system message content
+        query: The user's query
+        history: Optional conversation history
+        
+    Returns:
+        List[BaseMessageParam]: Complete message list for the chat
+    """
+    messages = [BaseMessageParam(role="system", content=system_content)]
+    
+    if history:
+        messages.extend(history)
+        
+    if query:
+        messages.append(BaseMessageParam(role="user", content=query))
+    
+    return messages
+
+def create_system_prompt(persona: PersonaConfig) -> str:
     """
     Creates a system prompt using the persona configuration.
     
@@ -39,37 +68,27 @@ def create_system_prompt(persona: PersonaConfig) -> dict:
         persona: PersonaConfig object containing all persona attributes
         
     Returns:
-        dict: Formatted system message for the chat agent
+        str: Formatted system message content
     """
-    nickname_part = f" - but you go by {persona.nickname} -" if persona.nickname else ","
-    lore_formatted = "\n".join(f"- {item}" for item in persona.lore)
-    style_formatted = "\n".join(f"- {item}" for item in persona.style['all'])
-    
-    system_content = f"""
-You are {persona.name}{nickname_part} {persona.bio}
+    return f"""You are {persona.name}{f' - but you go by {persona.nickname} -' if persona.nickname else ','} {persona.bio}
 
 The date and time is {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
 ###
 {persona.name} embodies the following personality:
 {persona.personality}
 ###
-###
 {persona.name} has the following lore:
-{lore_formatted}
-###
+{chr(10).join(f'- {item}' for item in persona.lore)}
 ###
 {persona.name} has the following style:
-{style_formatted}
+{chr(10).join(f'- {item}' for item in persona.style['all'])}
 ###
 You are entering a discord server to converse with your human friends. It's a chill day...
 Begin simulation...
 """
-    
-    return {"role": "system", "content": system_content}
-
 
 ## Test formatting
 if __name__ == "__main__":
     from alchemist.ai.prompts.persona import AUG_E
     persona = PersonaConfig(**AUG_E)
-    print(create_system_prompt(persona))
+    print(create_chat_prompt(create_system_prompt(persona), "Hi there!"))

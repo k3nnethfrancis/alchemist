@@ -1,56 +1,74 @@
-"""
-Discord Chat Bot Example using RuntimeConfig and DiscordRuntime.
+"""Discord chatbot example using the Alchemist framework.
 
-This example demonstrates how to set up a Discord bot using our runtime system.
+This example demonstrates how to create a Discord bot that can:
+1. Respond to mentions
+2. Use tools (Calculator and ImageGeneration)
+3. Process messages with rich metadata
 """
 
-import os
-import logging
 import asyncio
+import logging
+from pathlib import Path
 from dotenv import load_dotenv
+import os
+import sys
 
-from alchemist.ai.base.runtime import RuntimeConfig
-from alchemist.core.extensions.discord.runtime import DiscordRuntime
-from alchemist.ai.prompts.persona import AUG_E
-from alchemist.ai.base.tools import ImageGenerationTool
+from alchemist.ai.base.runtime import RuntimeConfig, DiscordRuntime
+from alchemist.ai.prompts.persona import KEN_E
+from alchemist.ai.base.tools import CalculatorTool, ImageGenerationTool
 
 # Configure logging
-logging.basicConfig(level=logging.INFO)
+log_dir = Path("logs")
+log_dir.mkdir(exist_ok=True)
+
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler(log_dir / "discord_bot.log"),
+        logging.StreamHandler()
+    ]
+)
+
 logger = logging.getLogger(__name__)
 
 async def main():
-    """Initialize and run the Discord bot using runtime system."""
+    """Run the Discord bot."""
     try:
         # Load environment variables
         load_dotenv()
         token = os.getenv("DISCORD_BOT_TOKEN")
         if not token:
-            raise ValueError("DISCORD_BOT_TOKEN environment variable not set")
+            logger.error("DISCORD_BOT_TOKEN not set in .env file")
+            sys.exit(1)
         
         # Configure runtime
         config = RuntimeConfig(
             provider="openpipe",
-            persona=AUG_E,
-            tools=[ImageGenerationTool],
+            model="gpt-4",
+            persona=KEN_E,
+            tools=[CalculatorTool, ImageGenerationTool],
             platform_config={
-                "intents": ["message_content", "guilds", "guild_messages"],
-                "activity_type": "listening",
-                "activity_name": "mentions"
+                "image_channel": True  # Enable image responses
             }
         )
         
-        # Initialize and start Discord runtime
-        runtime = DiscordRuntime(
-            token=token,
-            config=config
-        )
+        # Create and start runtime
+        runtime = DiscordRuntime(config=config, token=token)
         
         logger.info("Starting Discord bot...")
         await runtime.start()
         
+        # Keep the bot running
+        try:
+            await asyncio.Future()  # run forever
+        except KeyboardInterrupt:
+            logger.info("Shutting down...")
+            await runtime.stop()
+            
     except Exception as e:
-        logger.error(f"Error running Discord bot: {str(e)}")
-        raise
+        logger.error(f"Error in Discord bot: {str(e)}", exc_info=True)
+        sys.exit(1)
 
 if __name__ == "__main__":
     asyncio.run(main()) 

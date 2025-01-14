@@ -1,243 +1,171 @@
-"""Test suite for BaseAgent."""
+"""Test suite for BaseAgent implementation.
+
+This module contains tests for the BaseAgent class, verifying:
+1. Agent initialization and configuration
+2. Message handling and history management
+3. Tool integration and execution
+4. Provider-specific call handling
+"""
 
 import pytest
-from unittest.mock import AsyncMock, patch, MagicMock
+from unittest.mock import AsyncMock, patch
 from mirascope.core import BaseMessageParam
 
-from alchemist.ai.base.agent import BaseAgent
+from alchemist.ai.base.agent import BaseAgent, CalculatorTool
 from alchemist.ai.prompts.persona import AUG_E
-from alchemist.ai.base.tools import ImageGenerationTool
+from alchemist.ai.prompts.base import create_system_prompt
 
 @pytest.fixture
-def base_agent():
-    """Create a base agent for testing."""
-    return BaseAgent(provider="openpipe", persona=AUG_E)
+def mock_call_response():
+    """Create a mock call response for testing."""
+    return AsyncMock(
+        content="Test response",
+        message_param=BaseMessageParam(role="assistant", content="Test response"),
+        tool=None,
+        tool_message_params=None,
+        tools=None
+    )
+
+@pytest.fixture
+def mock_tool_response():
+    """Create a mock tool call response for testing."""
+    tool = CalculatorTool(expression="2 + 2")
+    return AsyncMock(
+        content="Let me calculate that for you",
+        message_param=BaseMessageParam(
+            role="assistant",
+            content="Let me calculate that for you",
+            function_call={"name": "calculator", "arguments": '{"expression": "2 + 2"}'}
+        ),
+        tool=tool,
+        tool_message_params=lambda result: [
+            BaseMessageParam(
+                role="function",
+                name="calculator",
+                content=str(result[0][1])
+            )
+        ],
+        tools=None
+    )
 
 @pytest.mark.asyncio
-async def test_agent_initialization(base_agent):
-    """Test agent initialization and system prompt."""
-    assert base_agent.provider == "openpipe"
-    assert len(base_agent.history) == 1  # System prompt
-    assert base_agent.history[0].role == "system"
-
-@pytest.mark.asyncio
-async def test_agent_step():
-    """Test agent step processing."""
-    agent = BaseAgent(provider="openpipe")
+async def test_agent_initialization():
+    """Test agent initialization with proper configuration."""
+    agent = BaseAgent(
+        provider="openpipe",
+        model="gpt-4o-mini",
+        persona=AUG_E,
+        tools=[CalculatorTool]
+    )
     
-    with patch('alchemist.ai.base.agent.BaseAgent._call_openpipe') as mock_call:
-        mock_call.return_value = AsyncMock(
-            content="Test response",
-            message_param=BaseMessageParam(role="assistant", content="Test response"),
-            tool=None
-        )
-        
+    # Verify basic configuration
+    assert agent.provider == "openpipe"
+    assert agent.model == "gpt-4o-mini"
+    assert agent.tool_classes == [CalculatorTool]
+    
+    # Verify system prompt is created
+    system_content = create_system_prompt(agent.persona)
+    assert isinstance(system_content, str)
+    assert len(system_content) > 0
+
+@pytest.mark.asyncio
+async def test_prompt_creation():
+    """Test prompt creation with proper message formatting."""
+    agent = BaseAgent(provider="openpipe", tools=[CalculatorTool])
+    
+    # Add some history
+    agent.history = [
+        BaseMessageParam(role="user", content="Hello"),
+        BaseMessageParam(role="assistant", content="Hi there")
+    ]
+    
+    # Test prompt creation
+    messages = agent._prompt("test query")
+    
+    # Verify message structure
+    assert isinstance(messages, list)
+    assert all(isinstance(msg, BaseMessageParam) for msg in messages)
+    assert messages[0].role == "system"  # First message should be system
+    assert len(messages) == len(agent.history) + 1  # History + system message
+
+@pytest.mark.asyncio
+async def test_basic_conversation(mock_call_response):
+    """Test basic conversation flow without tools."""
+    agent = BaseAgent(provider="openpipe", tools=[])
+    
+    with patch('mirascope.core.openai.call', return_value=lambda _: lambda _: mock_call_response):
         response = await agent._step("Hello")
+        
+        # Verify response
         assert response == "Test response"
-        assert len(agent.history) == 3  # System + user + assistant
+        assert len(agent.history) == 2  # User message + assistant response
+        assert agent.history[0].role == "user"
+        assert agent.history[1].role == "assistant"
 
 @pytest.mark.asyncio
-async def test_agent_tool_execution():
-    """Test agent tool execution."""
-    agent = BaseAgent(provider="openpipe")
-    mock_tool = AsyncMock(
-        _name=lambda: "test_tool",
-        args={"arg": "value"},
-        call=AsyncMock(return_value="Tool result")
-    )
+async def test_calculator_tool_execution(mock_tool_response, mock_call_response):
+    """Test calculator tool execution and response handling."""
+    agent = BaseAgent(provider="openpipe", tools=[CalculatorTool])
     
-    with patch('alchemist.ai.base.agent.BaseAgent._call_openpipe') as mock_call:
+    with patch('mirascope.core.openai.call') as mock_call:
+        # First call - LLM decides to use calculator
         mock_call.side_effect = [
-            AsyncMock(
-                content="Using tool",
-                message_param=BaseMessageParam(role="assistant", content="Using tool"),
-                tool=mock_tool,
-                tool_message_params=lambda result: [
-                    BaseMessageParam(role="tool", content=str(result[0][1]))
-                ]
-            ),
-            AsyncMock(
-                content="Tool response",
-                message_param=BaseMessageParam(role="assistant", content="Tool response"),
-                tool=None
-            )
+            lambda _: lambda _: mock_tool_response,  # Returns tool call
+            lambda _: lambda _: mock_call_response   # Returns final response
         ]
         
-        response = await agent._step("Use tool")
-        assert response == "Tool response"
-        mock_tool.call.assert_called_once()
-
-@pytest.mark.asyncio
-async def test_agent_provider_selection():
-    """Test provider selection and calling."""
-    providers = ["openai", "anthropic", "openpipe"]
-    
-    for provider in providers:
-        agent = BaseAgent(provider=provider)
-        mock_method = f"_call_{provider}"
+        # Execute the step
+        response = await agent._step("Calculate 2 + 2")
         
-        with patch(f'alchemist.ai.base.agent.BaseAgent.{mock_method}') as mock_call:
-            mock_call.return_value = AsyncMock(
-                content="Test response",
-                message_param=BaseMessageParam(role="assistant", content="Test response"),
-                tool=None
-            )
-            
-            response = await agent._step("Hello")
-            assert response == "Test response"
-            mock_call.assert_called_once()
-
-@pytest.mark.asyncio
-async def test_agent_error_handling():
-    """Test agent error handling."""
-    agent = BaseAgent(provider="openpipe")
-    
-    with patch('alchemist.ai.base.agent.BaseAgent._call_openpipe', 
-              side_effect=Exception("Test error")):
-        response = await agent._step("Hello")
-        assert "error" in response.lower()
-
-@pytest.mark.asyncio
-async def test_agent_message_history_management():
-    """Test message history management."""
-    agent = BaseAgent(provider="openpipe")
-    initial_history_len = len(agent.history)
-    
-    with patch('alchemist.ai.base.agent.BaseAgent._call_openpipe') as mock_call:
-        mock_call.return_value = AsyncMock(
-            content="Test response",
-            message_param=BaseMessageParam(role="assistant", content="Test response"),
-            tool=None
-        )
+        # Verify history has correct sequence:
+        # 1. User message
+        # 2. Assistant message (deciding to use tool)
+        # 3. Function message (tool result)
+        # 4. Assistant message (final response)
+        assert len(agent.history) == 4
+        assert agent.history[0].role == "user"
+        assert agent.history[1].role == "assistant"
+        assert agent.history[2].role == "function"  # Tool result
+        assert agent.history[3].role == "assistant"  # Final response
         
-        # Test message addition
-        await agent._step("Hello")
-        assert len(agent.history) == initial_history_len + 2  # User + Assistant
-        assert agent.history[-2].role == "user"
-        assert agent.history[-1].role == "assistant"
-        
-        # Test message content
-        assert agent.history[-2].content == "Hello"
-        assert agent.history[-1].content == "Test response"
+        # Verify tool execution
+        assert mock_call.call_count == 2  # Initial call + after tool execution
 
 @pytest.mark.asyncio
-async def test_agent_tool_chain():
-    """Test tool chaining behavior."""
-    agent = BaseAgent(provider="openpipe")
-    mock_tool1 = AsyncMock(
-        _name=lambda: "tool1",
-        args={"arg": "value1"},
-        call=AsyncMock(return_value="Tool1 result")
-    )
-    mock_tool2 = AsyncMock(
-        _name=lambda: "tool2",
-        args={"arg": "value2"},
-        call=AsyncMock(return_value="Tool2 result")
-    )
-    
-    with patch('alchemist.ai.base.agent.BaseAgent._call_openpipe') as mock_call:
-        mock_call.side_effect = [
-            # First tool response
-            AsyncMock(
-                content="Using tool1",
-                message_param=BaseMessageParam(role="assistant", content="Using tool1"),
-                tool=mock_tool1,
-                tool_message_params=lambda result: [
-                    BaseMessageParam(role="tool", content=str(result[0][1]))
-                ]
-            ),
-            # Second tool response
-            AsyncMock(
-                content="Using tool2",
-                message_param=BaseMessageParam(role="assistant", content="Using tool2"),
-                tool=mock_tool2,
-                tool_message_params=lambda result: [
-                    BaseMessageParam(role="tool", content=str(result[0][1]))
-                ]
-            ),
-            # Final response
-            AsyncMock(
-                content="Final response",
-                message_param=BaseMessageParam(role="assistant", content="Final response"),
-                tool=None
-            )
-        ]
-        
-        response = await agent._step("Use tools")
-        assert response == "Final response"
-        mock_tool1.call.assert_called_once()
-        mock_tool2.call.assert_called_once()
-
-@pytest.mark.asyncio
-async def test_agent_provider_specific_behavior():
-    """Test provider-specific behaviors."""
+async def test_provider_specific_calls():
+    """Test provider-specific call configurations."""
     providers = {
-        "openai": "gpt-4o-mini",
-        "anthropic": "claude-3-5-sonnet-20241022",
+        "openai": "gpt-4",
+        "anthropic": "claude-3-5-sonnet-20240620",
         "openpipe": "gpt-4o-mini"
     }
     
     for provider, model in providers.items():
-        agent = BaseAgent(provider=provider)
-        mock_method = f"_call_{provider}"
+        agent = BaseAgent(provider=provider, model=model, tools=[CalculatorTool])
         
-        with patch(f'alchemist.ai.base.agent.BaseAgent.{mock_method}') as mock_call:
-            await agent._step("Test")
-            # Verify correct model and configuration
-            call_args = mock_call.call_args[1] if mock_call.call_args[1] else mock_call.call_args[0]
-            assert len(call_args) > 0  # Ensure call was made with arguments
+        # Verify call configuration
+        with patch('mirascope.core.openai.call') as mock_openai, \
+             patch('mirascope.core.anthropic.call') as mock_anthropic:
+            
+            await agent._step("test")
+            
+            if provider == "anthropic":
+                mock_anthropic.assert_called_once()
+            else:
+                mock_openai.assert_called_once()
 
-@pytest.mark.asyncio
-async def test_image_generation_tool():
-    """Test image generation tool integration."""
-    agent = BaseAgent(provider="openpipe")
-    mock_image_tool = AsyncMock(
-        _name=lambda: "image_generation",
-        args={"prompt": "test image"},
-        call=AsyncMock(return_value="http://test.image.url")
-    )
+def test_calculator_tool():
+    """Test calculator tool functionality."""
+    # Test basic arithmetic
+    calc = CalculatorTool(expression="2 + 2")
+    assert calc.call() == "4"
     
-    with patch('alchemist.ai.base.agent.BaseAgent._call_openpipe') as mock_call:
-        # Set up the mock to return a complete response sequence
-        mock_call.side_effect = [
-            AsyncMock(
-                content="Generating image",
-                message_param=BaseMessageParam(role="assistant", content="Generating image"),
-                tool=mock_image_tool,
-                tool_message_params=lambda result: [
-                    BaseMessageParam(role="tool", content="http://test.image.url")
-                ]
-            ),
-            # Final response after tool execution
-            AsyncMock(
-                content="Here's your generated image: http://test.image.url",
-                message_param=BaseMessageParam(
-                    role="assistant", 
-                    content="Here's your generated image: http://test.image.url"
-                ),
-                tool=None
-            )
-        ]
-        
-        response = await agent._step("Generate an image")
-        assert mock_image_tool.call.called
-        assert "http://test.image.url" in response
-
-@pytest.mark.asyncio
-async def test_agent_error_recovery():
-    """Test agent error recovery and graceful degradation."""
-    agent = BaseAgent(provider="openpipe")
+    # Test more complex expression
+    calc = CalculatorTool(expression="42 ** 0.5")
+    assert calc.call() == "6.48074069840786"
     
-    with patch('alchemist.ai.base.agent.BaseAgent._call_openpipe') as mock_call:
-        # Simulate different types of errors
-        errors = [
-            ValueError("Invalid input"),
-            ConnectionError("Network error"),
-            Exception("Unknown error")
-        ]
-        
-        for error in errors:
-            mock_call.side_effect = error
-            response = await agent._step("Test")
-            assert "error" in response.lower()
-            assert str(error) in response
+    # Test error handling
+    calc = CalculatorTool(expression="invalid")
+    result = calc.call()
+    assert "Error" in result
+    assert "name 'invalid' is not defined" in result

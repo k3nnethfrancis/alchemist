@@ -8,9 +8,11 @@ from pydantic import BaseModel, Field
 import logging
 import re
 import asyncio
+import discord
 
 from alchemist.core.logger import log_step, log_run
 from alchemist.ai.prompts.base import PersonaConfig
+from alchemist.core.extensions.discord.client import DiscordClient
 
 logger = logging.getLogger(__name__)
 
@@ -118,4 +120,75 @@ class LocalRuntime(BaseChatRuntime):
         """Stop the local runtime."""
         pass
 
-__all__ = ["RuntimeConfig", "BaseRuntime", "BaseChatRuntime", "LocalRuntime"]
+class DiscordRuntime(BaseChatRuntime):
+    """Runtime for Discord chat interactions.
+    
+    This runtime integrates with Discord's API to provide a chat interface
+    through Discord servers and channels.
+    
+    Attributes:
+        token (str): Discord bot token for authentication
+        client (Optional[DiscordClient]): Instance of the Discord client
+    """
+    
+    def __init__(self, config: RuntimeConfig, token: str):
+        """Initialize Discord runtime.
+        
+        Args:
+            config (RuntimeConfig): Configuration for the runtime
+            token (str): Discord bot token for authentication
+        """
+        super().__init__(config)
+        self.token = token
+        self.client = None
+        
+    async def start(self) -> None:
+        """Start Discord bot session.
+        
+        This method:
+        1. Initializes a Discord session
+        2. Sets up required intents
+        3. Creates and starts the Discord client
+        
+        Raises:
+            ValueError: If token is invalid
+            ConnectionError: If connection to Discord fails
+        """
+        self._start_session("discord")
+        
+        # Setup Discord client with required intents
+        intents = discord.Intents.default()
+        intents.message_content = True
+        intents.guilds = True
+        
+        try:
+            self.client = DiscordClient(
+                agent=self.agent,
+                intents=intents,
+                token=self.token
+            )
+            
+            logger.info("Starting Discord bot...")
+            await self.client.start()
+            
+        except discord.errors.LoginFailure as e:
+            logger.error(f"Failed to login to Discord: {str(e)}")
+            raise ValueError("Invalid Discord token provided") from e
+        except Exception as e:
+            logger.error(f"Error starting Discord client: {str(e)}")
+            raise
+    
+    async def stop(self) -> None:
+        """Stop Discord bot session.
+        
+        Gracefully closes the Discord client connection.
+        """
+        if self.client:
+            try:
+                await self.client.close()
+                logger.info("Discord bot stopped successfully")
+            except Exception as e:
+                logger.error(f"Error stopping Discord client: {str(e)}")
+                raise
+
+__all__ = ["RuntimeConfig", "BaseRuntime", "BaseChatRuntime", "LocalRuntime", "DiscordRuntime"]

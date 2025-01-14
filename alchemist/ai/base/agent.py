@@ -1,219 +1,201 @@
-"""
-BaseAgent implementation for the Alchemist system.
+"""Base Agent implementation using Mirascope's agent patterns.
 
-This module defines a provider-agnostic agent that can:
-- Send queries to OpenAI, Anthropic, or OpenPipe via Mirascope.
-- Incorporate a PersonaConfig for a consistent "voice" and context.
-- Maintain conversation history for multi-turn interactions.
-- Operate in interactive mode (e.g., local console chatbot).
-- Integrate seamlessly with the Graph system for workflow-based execution.
+This module implements a flexible agent architecture using Mirascope's decorator pattern.
+It uses OpenPipe for LLM calls, supports tool integration, and maintains conversation history.
 
-Core Features:
-1. Multi-provider support:
-   - "openai", "anthropic", or "openpipe" (via OpenPipeClient).
-2. Persona-based context:
-   - Uses alchemist.ai.prompts.base.PersonaConfig to represent persona attributes.
-3. History tracking:
-   - Maintains an ordered list of conversation turns.
-4. Simple, modular design:
-   - Encourages extension for specialized nodes or workflows.
+Message Flow:
+    1. User input is received and added to history
+    2. OpenPipe API call is made with:
+       - System message (from persona)
+       - Conversation history
+       - Current user query
+    3. Response is processed:
+       - If no tools: response is added to history and returned
+       - If tools: each tool is executed, results added to history, and step repeats
+    
+Key Features:
+    - OpenPipe integration with gpt-4o-mini
+    - Tool integration with Mirascope's BaseTool pattern
+    - Conversation history management
+    - Persona-based behavior configuration
+    - Async-first implementation
 
-Usage Examples:
-----------------
-1) Local Chat Example:
-   from alchemist.ai.prompts.persona import KEN_E
-   from alchemist.ai.prompts.base import PersonaConfig
-   agent = BaseAgent(
-       provider="openai",
-       model="gpt-4o-mini",
-       persona=PersonaConfig(**KEN_E)
-   )
-   agent.run()  # Starts a local interactive chat in the terminal.
-
-2) Graph Integration:
-   - Use in LLMNode or DecisionNode in the Graph system:
-       llm_node = LLMNode(
-           id="my_llm_step",
-           agent=agent,
-           prompt="Hello from {context_data}!"
-       )
-   - The node calls agent.get_response(...) or agent._step(...),
-     enabling broader, multi-node workflow orchestration.
-
-Contributing Guidelines:
-------------------------
-- Follow PEP 8 and add docstrings and type hints.
-- Keep code modular and easy to extend.
-- Include tests that verify both functionality and workflow integrity.
-- Maintain minimal complexity and deep modules with clear interfaces.
+Example:
+    ```python
+    from alchemist.ai.base.tools import CalculatorTool
+    
+    agent = BaseAgent(tools=[CalculatorTool])
+    await agent.run()
+    ```
 """
 
-import sys
 import logging
-from typing import Optional, List, Dict, Any, Literal
-
+from typing import List, Any
 from pydantic import BaseModel, Field
+import inspect
 
-# Mirascope
 from mirascope.core import (
-    openai,
-    anthropic,
-    Messages,
     BaseMessageParam,
-    prompt_template,
+    BaseTool,
+    BaseDynamicConfig,
+    openai,
 )
-from mirascope.core.base import BaseCallResponse
-
-# OpenPipe
 from openpipe import OpenAI as OpenPipeClient
 
-# Alchemist imports
 from alchemist.ai.prompts.base import create_system_prompt, PersonaConfig
-from alchemist.ai.prompts.persona import KEN_E  # Example persona dictionary
+from alchemist.ai.prompts.persona import BASE_ASSISTANT
+from alchemist.ai.base.tools import CalculatorTool
 
 logger = logging.getLogger(__name__)
 
-
 class BaseAgent(BaseModel):
+    """Base agent class implementing core agent functionality with persona support and tools.
+    
+    The agent maintains conversation history and supports tool execution through Mirascope's
+    BaseTool pattern. It uses OpenPipe's gpt-4o-mini model for generating responses and
+    deciding when to use tools.
+    
+    Message Flow:
+        1. User messages are added to history
+        2. System prompt (from persona) and history are sent to OpenPipe
+        3. If the response includes tool calls:
+           - Tools are executed in sequence
+           - Results are added to history
+           - Another API call is made with the tool results
+        4. Final response is returned to the user
+    
+    Attributes:
+        history: List of conversation messages (BaseMessageParam)
+        persona: Configuration for agent's personality and behavior
+        tools: List of available tool classes (not instances)
     """
-    Provider-agnostic chat agent for Alchemist.
-
-    Capabilities:
-    1) Multi-provider (OpenAI, Anthropic, OpenPipe) 
-    2) Supports a PersonaConfig for consistent system instruction
-    3) Maintains conversation history
-    4) Usable alone (local chatbot) or in graph-based workflows
-    """
-
-    provider: Literal["openai", "anthropic", "openpipe"] = Field(
-        default="openai",
-        description="LLM provider: 'openai', 'anthropic', or 'openpipe'."
-    )
-    model: str = Field(
-        default="gpt-4o-mini",
-        description="Model name, e.g. 'gpt-4o-mini', 'claude-3-5-sonnet-20240620', or an OpenPipe ID."
-    )
-    persona: PersonaConfig = Field(
-        default_factory=PersonaConfig,
-        description="Persona configuration, defines the agent's 'character.'"
-    )
+    
     history: List[BaseMessageParam] = Field(
         default_factory=list,
-        description="Conversation history (system, user, assistant messages)."
+        description="Conversation history"
+    )
+    persona: PersonaConfig = Field(
+        default_factory=lambda: PersonaConfig(**BASE_ASSISTANT),
+        description="Persona configuration for the agent"
+    )
+    tools: List[type[BaseTool]] = Field(
+        default_factory=list,
+        description="List of tool classes available to the agent"
     )
 
-    class Config:
-        arbitrary_types_allowed = True
-
-    @prompt_template()
-    def _system_prompt(self) -> Messages.Type:
-        """
-        Renders the system prompt using the persona config,
-        ensuring consistent 'character' for this agent.
-        """
-        sys_msg_dict = create_system_prompt(self.persona)
-        return [Messages.System(sys_msg_dict["content"])]
-
-    def _call_llm(self, user_input: str) -> BaseCallResponse:
-        """
-        Generic interface for calling Mirascope-based LLMs.
-
+    @openai.call("gpt-4o-mini", client=OpenPipeClient())
+    def _call(self, query: str) -> BaseDynamicConfig:
+        """Make an OpenPipe API call with the current conversation state.
+        
+        This method prepares the messages for the API call by:
+        1. Creating a system message from the persona
+        2. Including the full conversation history
+        3. Adding the current query if present
+        4. Providing available tools to the model
+        
         Args:
-            user_input (str): User query or message.
-
+            query: The current user input, or empty string for follow-up calls
+            
         Returns:
-            BaseCallResponse: The LLM response (containing text content, tokens, etc.).
+            BaseDynamicConfig: Contains messages and available tools
         """
-        # Build an in-memory prompt function that merges system prompt + history + user input
-        @prompt_template()
-        def messages_prompt(agent_input: str) -> Messages.Type:
-            return [
-                # The system prompt (from persona)
-                *self._system_prompt(),
-                # Past conversation history
-                *self.history,
-                # New user query
-                Messages.User(agent_input),
-            ]
+        messages = [
+            BaseMessageParam(role="system", content=create_system_prompt(self.persona)),
+            *self.history,
+            BaseMessageParam(role="user", content=query) if query else None,
+        ]
+        messages = [m for m in messages if m is not None]
+        return {"messages": messages, "tools": self.tools}
 
-        # Choose the method of invocation based on self.provider
-        if self.provider == "openai":
-            llm_fn = openai.call(self.model)(messages_prompt)
-        elif self.provider == "anthropic":
-            llm_fn = anthropic.call(self.model)(messages_prompt)
-        elif self.provider == "openpipe":
-            # Re-use the openai call pipeline but pass a different client
-            llm_fn = openai.call(self.model, client=OpenPipeClient())(messages_prompt)
+    async def _step(self, query: str) -> str:
+        """Execute a single step of agent interaction.
+        
+        This method handles the core interaction loop:
+        1. Adds user query to history (if present)
+        2. Makes API call and adds response to history
+        3. If tools are in the response:
+           - Executes each tool
+           - Adds results to history
+           - Makes another API call (recursive step)
+        4. Returns final response content
+        
+        The flow ensures that:
+        - All messages are properly added to history
+        - Tools are executed in the correct order
+        - Results are formatted correctly
+        - Recursive steps handle follow-up responses
+        
+        Args:
+            query: User input or empty string for follow-up steps
+            
+        Returns:
+            str: The final response content
+        """
+        if query:
+            self.history.append(BaseMessageParam(role="user", content=query))
+            
+        response = self._call(query)
+        self.history.append(response.message_param)
+        
+        tools_and_outputs = []
+        if tools := response.tools:
+            for tool in tools:
+                logger.info(f"[Calling Tool '{tool._name()}' with args {tool.args}]")
+                
+                # Handle both sync and async tool calls
+                if inspect.iscoroutinefunction(tool.call):
+                    result = await tool.call()
+                else:
+                    result = tool.call()
+                    
+                logger.info(f"Tool result: {result}")
+                tools_and_outputs.append((tool, result))
+            
+            self.history.extend(response.tool_message_params(tools_and_outputs))
+            return await self._step("")
         else:
-            raise ValueError(f"Unrecognized provider '{self.provider}'")
+            return response.content
 
-        response = llm_fn(user_input)
-        return response
-
-    def get_response(self, user_input: str) -> str:
+    async def run(self) -> None:
+        """Run the agent interaction loop.
+        
+        This method:
+        1. Prompts for user input
+        2. Processes each query through _step()
+        3. Prints responses
+        4. Continues until user exits
+        
+        The loop handles:
+        - User input collection
+        - Exit commands ('exit' or 'quit')
+        - Async execution of steps
+        - Response display
         """
-        Obtain a single response string from the LLM without mutating self.history.
-
-        Args:
-            user_input (str): The user's query.
-
-        Returns:
-            str: The assistant's response content.
-        """
-        logger.debug(f"get_response called with query: {user_input}")
-        response = self._call_llm(user_input)
-        return response.content
-
-    def _step(self, user_input: str) -> str:
-        """
-        Obtain a single response from the LLM and update the internal history.
-
-        Args:
-            user_input (str): The user's query.
-
-        Returns:
-            str: The assistant's response content (also appended to conversation history).
-        """
-        logger.debug(f"_step called with query: {user_input}")
-        response = self._call_llm(user_input)
-        assistant_msg = response.message_param
-
-        # Update conversation history
-        self.history.append(Messages.User(user_input))
-        self.history.append(assistant_msg)
-
-        return response.content
-
-    def run(self) -> None:
-        """
-        Run an interactive local chat session in the console.
-        Exits on 'exit' or 'quit'.
-
-        Example usage:
-            agent = BaseAgent(provider="openai", model="gpt-4o-mini")
-            agent.run()
-        """
-        print("\nStarting interactive chat. Type 'exit' or 'quit' to stop.")
         while True:
-            user_query = input("(User): ")
-            if user_query.strip().lower() in ["exit", "quit"]:
+            query = input("(User): ")
+            if query.lower() in ["exit", "quit"]:
                 break
-            try:
-                answer = self._step(user_query)
-                print(f"(Assistant): {answer}")
-            except Exception as e:
-                logger.error(f"Error in interactive loop: {e}")
-                print(f"[Error] {str(e)}")
+            print("(Assistant): ", end="", flush=True)
+            result = await self._step(query)
+            print(result)
 
-
+# Main execution block for direct script usage
 if __name__ == "__main__":
-    logging.basicConfig(stream=sys.stdout, level=logging.DEBUG)
-    logger.info("Running BaseAgent as a standalone local chatbot...")
-
-    # Use a sample persona from persona.py
-    agent = BaseAgent(
-        provider="openpipe",
-        model="gpt-4o-mini",
-        persona=PersonaConfig(**KEN_E)
-    )
-    agent.run()
+    import asyncio
+    
+    async def main():
+        """Run the agent."""
+        logging.basicConfig(
+            level=logging.INFO,
+            format='%(message)s'
+        )
+        
+        agent = BaseAgent(tools=[CalculatorTool])  # Pass tool class, not instance
+        
+        print("\nInitialized agent with gpt-4o-mini")
+        print("Type 'exit' or 'quit' to end the conversation")
+        print("-" * 50)
+        
+        await agent.run()
+    
+    asyncio.run(main())
