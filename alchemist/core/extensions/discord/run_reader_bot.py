@@ -105,7 +105,8 @@ class ReaderBot(discord.Client):
                 
             messages = []
             async for message in channel.history(limit=100, after=after):
-                if not message.author.bot:
+                # Include non-bot messages and bot messages with embeds
+                if not message.author.bot or (message.author.bot and message.embeds):
                     # Convert to PST and ensure proper timezone info
                     timestamp_pst = message.created_at.astimezone(PST)
                     
