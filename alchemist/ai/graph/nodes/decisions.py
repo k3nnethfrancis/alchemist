@@ -1,21 +1,43 @@
-"""Decision node implementations."""
+"""Decision node implementations for LLM-based choices."""
 
 import logging
 from typing import Dict, Any, Optional, List
 from pydantic import Field
 
-from alchemist.ai.graph.nodes.base import Node, NodeState, LLMNode
+from alchemist.ai.graph.base import NodeState
+from alchemist.ai.graph.nodes.base.llm import LLMNode
 from alchemist.ai.base.agent import BaseAgent
 
 logger = logging.getLogger(__name__)
 
 class BinaryDecisionNode(LLMNode):
-    """Node that makes a binary decision."""
+    """Node that makes a binary decision using LLM.
+    
+    This node uses an LLM to make yes/no decisions based on a prompt template.
+    The prompt is formatted with context metadata before being sent to the LLM.
+    
+    Attributes:
+        prompt: Template string for generating the decision prompt
+        agent: The LLM agent to use (inherited from LLMNode)
+    """
     
     prompt: str = Field(default="")
     
     async def process(self, state: NodeState) -> Optional[str]:
-        """Process state and return yes/no path."""
+        """Process state and return yes/no path.
+        
+        Args:
+            state: Current node state containing results and context
+            
+        Returns:
+            ID of next node to execute based on yes/no decision
+            
+        The node will:
+        1. Format the prompt with context metadata
+        2. Get a yes/no decision from the LLM
+        3. Store the decision and response
+        4. Return the next node ID based on the decision
+        """
         try:
             # Format prompt with state context
             try:
@@ -47,7 +69,8 @@ class BinaryDecisionNode(LLMNode):
             state.results[self.id] = {
                 "decision": decision,
                 "prompt": formatted_prompt,
-                "response": response
+                "response": response,
+                "timestamp": await state.context.get_context("time")
             }
             
             # Return next node based on decision
@@ -57,10 +80,23 @@ class BinaryDecisionNode(LLMNode):
             
         except Exception as e:
             logger.error(f"Error in binary decision: {str(e)}")
+            state.results[self.id] = {
+                "error": str(e),
+                "prompt": formatted_prompt if 'formatted_prompt' in locals() else None
+            }
             return self.next_nodes.get("error")
 
 class MultiChoiceNode(LLMNode):
-    """Node that makes a multi-choice decision using LLM."""
+    """Node that makes a multi-choice decision using LLM.
+    
+    This node uses an LLM to select from multiple choices based on a prompt template.
+    The prompt is formatted with context metadata before being sent to the LLM.
+    
+    Attributes:
+        choices: List of valid choices
+        prompt: Template string for generating the decision prompt
+        agent: The LLM agent to use (inherited from LLMNode)
+    """
     
     choices: List[str] = Field(default_factory=list)
     prompt: str = Field(default="")
@@ -72,7 +108,20 @@ class MultiChoiceNode(LLMNode):
         super().__init__(**data)
     
     async def process(self, state: NodeState) -> Optional[str]:
-        """Process state and return selected choice path."""
+        """Process state and return selected choice path.
+        
+        Args:
+            state: Current node state containing results and context
+            
+        Returns:
+            ID of next node to execute based on selected choice
+            
+        The node will:
+        1. Format the prompt with context metadata
+        2. Get a choice selection from the LLM
+        3. Store the choice and response
+        4. Return the next node ID based on the choice
+        """
         try:
             # Format prompt with state context
             try:
@@ -89,7 +138,7 @@ class MultiChoiceNode(LLMNode):
                 {"role": "user", "content": formatted_prompt}
             ]
             
-            response = await self._call_llm(messages)
+            response = await self.agent.get_response(messages)
             if not response:
                 logger.error("No response from LLM")
                 return self.next_nodes.get("error")
@@ -106,7 +155,9 @@ class MultiChoiceNode(LLMNode):
             state.results[self.id] = {
                 "choice": choice,
                 "prompt": formatted_prompt,
-                "response": response
+                "response": response,
+                "choices": self.choices,
+                "timestamp": await state.context.get_context("time")
             }
             
             # Return next node based on choice
@@ -116,4 +167,9 @@ class MultiChoiceNode(LLMNode):
             
         except Exception as e:
             logger.error(f"Error in multi-choice decision: {str(e)}")
+            state.results[self.id] = {
+                "error": str(e),
+                "prompt": formatted_prompt if 'formatted_prompt' in locals() else None,
+                "choices": self.choices
+            }
             return self.next_nodes.get("error") 
