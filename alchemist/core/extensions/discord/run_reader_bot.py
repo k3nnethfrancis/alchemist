@@ -20,6 +20,7 @@ import discord
 from dotenv import load_dotenv
 import os
 from datetime import datetime, timezone, timedelta
+import json
 
 # Configure logging
 logging.basicConfig(
@@ -49,6 +50,12 @@ class ReaderBot(discord.Client):
         """Called when the client is done preparing data after login."""
         logger.info(f"Reader bot logged in as {self.user.name} ({self.user.id})")
         
+        # Create channels.json
+        channels_data = {
+            "channels": {},
+            "categories": {}
+        }
+        
         # Log server and channel information
         logger.info("\n=== Available Servers and Channels ===")
         for guild in self.guilds:
@@ -63,24 +70,28 @@ class ReaderBot(discord.Client):
                     if category_name not in categories:
                         categories[category_name] = []
                     categories[category_name].append(channel)
+                    # Add to channels map
+                    channels_data["channels"][channel.name] = str(channel.id)
+                    logger.info(f"  - #{channel.name} (ID: {channel.id})")
             
-            # Print channels by category
+            # Add categories to data
             for category, channels in categories.items():
-                logger.info(f"\n  {category}:")
+                channels_data["categories"][category] = [
+                    channel.name for channel in channels
+                ]
+                logger.info(f"\nCategory {category}:")
                 for channel in channels:
-                    logger.info(f"    #{channel.name} (ID: {channel.id})")
-                    
-        logger.info("\n=== Channel Quick Copy Format ===")
-        logger.info("Copy this into your channel_map:")
-        channel_map = {}
-        for guild in self.guilds:
-            for channel in guild.channels:
-                if isinstance(channel, discord.TextChannel):
-                    channel_map[channel.name] = str(channel.id)
-        logger.info("channel_map = {")
-        for name, id in channel_map.items():
-            logger.info(f'    "{name}": "{id}",')
-        logger.info("}")
+                    logger.info(f"  - #{channel.name}")
+        
+        # Save to JSON file
+        config_dir = Path("config")
+        config_dir.mkdir(exist_ok=True)
+        
+        config_path = config_dir / "channels.json"
+        with open(config_path, 'w') as f:
+            json.dump(channels_data, f, indent=2)
+        
+        logger.info(f"\nChannel configuration saved to {config_path}")
         
         self.ready.set()
         
@@ -114,19 +125,24 @@ class ReaderBot(discord.Client):
                     content = message.content
                     
                     # Handle embeds if present
+                    embeds = []
                     if message.embeds:
                         for embed in message.embeds:
-                            embed_content = []
+                            embed_data = {
+                                "title": embed.title,
+                                "description": embed.description,
+                                "fields": [{"name": field.name, "value": field.value} for field in embed.fields],
+                                "url": embed.url if embed.url else None,
+                                "image": embed.image.url if embed.image else None
+                            }
+                            embeds.append(embed_data)
                             
-                            # Add embed title if present
+                            # Add embed content to message
+                            embed_content = []
                             if embed.title:
                                 embed_content.append(f"**{embed.title}**")
-                                
-                            # Add embed description if present    
                             if embed.description:
                                 embed_content.append(embed.description)
-                                
-                            # Add embed fields if present
                             for field in embed.fields:
                                 embed_content.append(f"• {field.name}: {field.value}")
                                 
@@ -138,10 +154,12 @@ class ReaderBot(discord.Client):
                         "content": content,
                         "author": {
                             "name": message.author.name,
-                            "id": str(message.author.id)
+                            "id": str(message.author.id),
+                            "bot": message.author.bot
                         },
                         "timestamp": timestamp_pst.timestamp(),
                         "timezone": "PST",
+                        "embeds": embeds,
                         "has_embeds": bool(message.embeds)
                     })
             

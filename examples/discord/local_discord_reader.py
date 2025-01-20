@@ -29,6 +29,7 @@ import logging
 from pathlib import Path
 from dotenv import load_dotenv
 import os
+import json
 
 from alchemist.ai.base.runtime import RuntimeConfig, LocalRuntime
 from alchemist.ai.prompts.persona import KEN_E
@@ -44,26 +45,19 @@ async def main():
         # Load environment variables
         load_dotenv()
         
-        # Configure channel mapping for agency42 server
-        channel_map = {
-            "general": "1288645478975541280",
-            "resources": "1288645711155564585",
-            "content-stream": "1310110972500774943",
-            "agency42": "1310111072690110534",
-            "agent-sandbox": "1318659602115592204",
-            "creative-riffs": "1319706555070939177",
-            "clients": "1321948182946512956",
-            "projects": "1322278531253801011",
-            "memecoins": "1322953493161574482",
-            "whiteboard": "1323027435725520926",
-            "ai-memories": "1323417443703455754",
-            "infra": "1325985507590799430",
-            "ai-news": "1326422578340036689",
-            "action-list": "1327092216807690352"
-        }
+        # Load channel configuration
+        config_path = Path("config/channels.json")
+        if not config_path.exists():
+            raise ValueError(
+                "channels.json not found. Please run the reader bot first:\n"
+                "python -m alchemist.core.extensions.discord.run_reader_bot"
+            )
+        
+        with open(config_path) as f:
+            channel_config = json.load(f)
         
         # Configure the Discord reader tool with channel mapping
-        DiscordReaderTool.configure(channel_map)
+        DiscordReaderTool.configure(channel_config["channels"])
         
         # Create runtime configuration
         config = RuntimeConfig(
@@ -92,19 +86,8 @@ async def main():
         print('- "Get the last 30 minutes of chat from agent-sandbox"')
         print("\nAvailable channels:")
         
-        # Print channels by category
-        categories = {
-            "augmented builders": [
-                "general", "resources", "content-stream", "agent-sandbox",
-                "memecoins", "whiteboard", "ai-memories", "ai-news"
-            ],
-            "Core": [
-                "agency42", "creative-riffs", "clients", "projects",
-                "infra", "action-list"
-            ]
-        }
-        
-        for category, channels in categories.items():
+        # Print channels by category using loaded configuration
+        for category, channels in channel_config["categories"].items():
             print(f"\n{category}:")
             for channel in channels:
                 print(f"  #{channel}")

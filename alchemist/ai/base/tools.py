@@ -131,7 +131,7 @@ class DiscordReaderTool(BaseTool, BaseModel):
         description="The Discord channel to read from (can be channel ID or name like 'general')"
     )
     lookback: str = Field(
-        ...,
+        default="24h",  # Change default to 24 hours
         description="Time period to look back (e.g., '1h', '2d', '30m')",
         pattern=r'^\d+[hdm]$'  # Validates format like "1h", "2d", "30m"
     )
@@ -245,9 +245,41 @@ class DiscordReaderTool(BaseTool, BaseModel):
                             days = int(delta.total_seconds() / 86400)
                             relative_time = f"{days}d ago"
                         
+                        # Include non-bot messages and bot messages with embeds
+                        if not msg['author']['bot'] or (msg['author']['bot'] and msg['embeds']):
+                            # Convert to PST and ensure proper timezone info
+                            timestamp_pst = datetime.fromtimestamp(
+                                msg['timestamp'],
+                                timezone(timedelta(hours=-8))  # PST
+                            ).astimezone(timezone(timedelta(hours=-8)))
+                            
+                            # Handle regular message content
+                            content = msg['content']
+                            
+                            # Handle embeds if present
+                            if msg['embeds']:
+                                for embed in msg['embeds']:
+                                    embed_content = []
+                                    
+                                    # Add embed title if present
+                                    if embed['title']:
+                                        embed_content.append(f"**{embed['title']}**")
+                                        
+                                    # Add embed description if present    
+                                    if embed['description']:
+                                        embed_content.append(embed['description'])
+                                        
+                                    # Add embed fields if present
+                                    for field in embed['fields']:
+                                        embed_content.append(f"• {field['name']}: {field['value']}")
+                                        
+                                    # Combine embed content with original message
+                                    if embed_content:
+                                        content = content + "\n" + "\n".join(embed_content) if content else "\n".join(embed_content)
+                        
                         formatted.append(
                             f"[{relative_time}] "
-                            f"{msg['author']['name']}: {msg['content']}"
+                            f"{msg['author']['name']}: {content}"
                         )
                     
                     return "\n".join(formatted)
