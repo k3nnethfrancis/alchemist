@@ -12,7 +12,6 @@ agent.txt
 worldsim.txt
 .DS_Store
 *.log
-*.txt
 logs/*.json
 logs/
 core/arxiv/
@@ -77,4 +76,3 @@ htmlcov/
 docs/_build/ 
 
 .cursorrules
-.lm-resources/

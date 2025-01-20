@@ -1,0 +1,348 @@
+# Alchemist Development Notes
+
+## Architecture Overview
+1. Core Agent System [DONE]:
+   - BaseAgent implementation with OpenPipe integration
+   - Provider-agnostic design
+   - Tool execution framework
+   - Basic conversation management
+
+2. Graph System [IN PROGRESS ~50%]:
+   - Base graph implementation with node state management
+   - LLM nodes for content processing
+   - Support for complex workflows with decision nodes
+   - Need: Enhanced state persistence and parallel execution
+   - Need: Better context management between nodes
+
+3. Agent Components [TO BUILD]:
+   - ContextSuppliers (similar to Eliza's Providers):
+     - Time awareness
+     - User relationship tracking
+     - External data integration
+     - Memory injection
+   - Evaluators (Reference/Alignment Systems):
+     - Conversation assessment
+     - Goal tracking
+     - Context awareness
+     - Behavioral alignment
+   - Extensions (Platform Clients):
+     - Discord [DONE]
+     - Twitter [PLANNED]
+     - LinkedIn [PLANNED]
+   - ToolKits (Plugin-like Tool Collections):
+     - Grouped tool functionality
+     - Shared context and usage patterns
+     - Configurable tool combinations
+   - Memory System:
+     - Vector embeddings
+     - Relational storage
+     - Context-aware retrieval
+
+## Current Status
+- Tools are properly integrated and functioning:
+  - CalculatorTool: Basic arithmetic operations
+  - ImageGenerationTool: DALL-E 3 integration
+  - DiscordReaderTool: Channel history with embed support
+
+- Discord Extension is complete:
+  - Message processing and tool execution
+  - Runtime integration
+  - Image generation support
+  - Enhanced embed handling
+
+- Graph Workflow Framework:
+  - Base implementation with state management
+  - LLM nodes for content processing
+  - Decision nodes for flow control
+  - Need: Integration with ContextSuppliers
+  - Need: Integration with Evaluators
+
+## Core Components
+1. agent.py:
+   - Core agent functionality
+   - Conversation history
+   - Tool execution
+   - Provider-agnostic design
+
+2. tools.py:
+   - Tool definitions and base classes
+   - Sync and async tool support
+   - Error handling and logging
+   - Future: ToolKit support
+
+3. runtime.py:
+   - Environment management
+   - Session tracking
+   - Platform-specific configurations
+   - Extension integration
+
+4. graph/:
+   - Workflow framework
+   - Node system
+   - State management
+   - Decision trees
+
+## Next Steps
+1. Graph System Completion:
+   - Enhance state persistence
+   - Add parallel execution
+   - Improve context management
+   - Integrate with ContextSuppliers
+   - Integrate with Evaluators
+
+2. Agent Components:
+   - Implement ContextSuppliers
+   - Build Evaluator framework
+   - Design ToolKit system
+   - Integrate Memory system
+
+3. Testing:
+   - Graph workflow tests
+   - ContextSupplier tests
+   - Evaluator tests
+   - Integration tests
+
+4. Documentation:
+   - Architecture overview
+   - Component interaction guides
+   - Extension development
+   - ToolKit creation
+
+## Dependencies
+- Mirascope: Core agent functionality
+- OpenPipe: LLM integration
+- Discord.py: Discord extension
+- Pydantic: Data validation
+- DALL-E 3: Image generation
+
+## Development Priorities
+1. Complete Graph System:
+   - Finish core node types
+   - Add state persistence
+   - Implement parallel execution
+
+2. Build Agent Components:
+   - ContextSuppliers first
+   - Evaluators second
+   - Memory integration third
+   - ToolKit system fourth
+
+3. Platform Extensions:
+   - Stabilize Discord
+   - Plan Twitter integration
+   - Plan LinkedIn integration
+
+## Notes
+- Keep provider-agnostic design
+- Focus on component modularity
+- Plan for easy extension
+- Consider memory integration points
+- Design for scalability
+- Enable easy toolkit creation
+- Support multiple evaluation systems
+
+## Graph Framework Analysis
+
+### Current Implementation
+
+1. base.py (Core Graph Framework):
+   - Basic graph structure with nodes and edges
+   - Simple state management
+   - Sequential execution flow
+   - Basic error handling
+
+2. nodes/base.py (Base Node Types):
+   - Basic Node interface
+   - Simple LLMNode implementation
+   - Basic prompt formatting
+
+3. nodes/decisions.py (Decision Nodes):
+   - Binary and multi-choice decisions
+   - Basic LLM-based decision making
+   - Simple error handling
+
+4. nodes/actions.py (Action Nodes):
+   - Basic ToolNode structure
+   - Mocked tool execution
+
+### Required Changes
+
+1. base.py Enhancements:
+   - Add support for parallel execution paths
+   - Enhance state persistence with memory integration
+   - Add ContextSupplier integration points
+   - Add support for graph visualization
+   - Add state checkpointing and recovery
+   - Add support for subgraphs/nested workflows
+
+2. nodes/base.py Enhancements:
+   - Add ContextAwareNode base class
+   - Add EvaluatedNode for alignment checks
+   - Enhance prompt management with templates
+   - Add memory-aware node base class
+   - Add support for node metadata and configuration
+   - Add node validation hooks
+
+3. nodes/decisions.py Enhancements:
+   - Add support for complex decision criteria
+   - Integrate with Evaluators for decision validation
+   - Add support for decision confidence scores
+   - Add decision caching/memoization
+   - Add support for fallback paths
+   - Add decision explanation capabilities
+
+4. nodes/actions.py Enhancements:
+   - Integrate with actual tool system
+   - Add support for ToolKit integration
+   - Add parallel tool execution
+   - Add tool result validation
+   - Add retry mechanisms
+   - Add tool execution monitoring
+   - Add tool chaining capabilities
+
+### New Components Needed
+
+1. context.py:
+   ```python
+   class ContextSupplier:
+       """Base class for context providers."""
+       async def get_context(self, state: NodeState) -> Dict[str, Any]: ...
+
+   class TimeAwareContext(ContextSupplier):
+       """Provides time-based context."""
+       ...
+
+   class MemoryContext(ContextSupplier):
+       """Provides memory-based context."""
+       ...
+   ```
+
+2. evaluators.py:
+   ```python
+   class Evaluator:
+       """Base class for response evaluation."""
+       async def evaluate(self, state: NodeState, response: Any) -> bool: ...
+
+   class AlignmentEvaluator(Evaluator):
+       """Checks response alignment with goals."""
+       ...
+
+   class SafetyEvaluator(Evaluator):
+       """Checks response safety."""
+       ...
+   ```
+
+3. memory.py:
+   ```python
+   class GraphMemory:
+       """Manages persistent state across executions."""
+       async def store(self, key: str, value: Any): ...
+       async def retrieve(self, key: str) -> Any: ...
+       async def update(self, key: str, value: Any): ...
+   ```
+
+### Implementation Priority
+
+1. Core Enhancements:
+   - Parallel execution support in base.py
+   - Memory integration
+   - Context supplier framework
+   - Tool system integration
+
+2. Node Improvements:
+   - Context-aware base nodes
+   - Enhanced decision nodes
+   - Full tool node implementation
+   - Node validation system
+
+3. New Components:
+   - Context suppliers
+   - Evaluator framework
+   - Memory system
+   - Graph visualization
+
+4. Advanced Features:
+   - Subgraph support
+   - State persistence
+   - Advanced error handling
+   - Performance optimizations
+
+Development Notes and Roadmap
+==========================
+
+Current Status
+-------------
+
+1. Core Agent System
+   - Base implementation complete and functional
+   - OpenPipe integration working
+   - Tool system tested and working
+
+2. Graph System
+   - Core framework implemented with NodeContext, NodeState, Node, and Graph classes
+   - Base node types created:
+     * LLMNode: For LLM-based operations
+     * ToolNode: For tool execution
+   - Workflow test implemented and functional:
+     * Content filtering working
+     * Analysis and categorization nodes functional
+     * Terminal node handling implemented
+     * State management between nodes working
+   - Basic logging and debugging in place
+
+3. Extensions
+   - DiscordReaderTool implemented and functional
+   - Channel mapping and lookback functionality working
+
+Next Steps
+----------
+
+1. Graph Framework Enhancements
+   - Improve state visibility and debugging:
+     * Add detailed state inspection methods
+     * Enhance logging for state transitions
+     * Add visualization tools for graph execution
+   
+   - Strengthen error handling:
+     * Add error recovery mechanisms
+     * Implement retry logic for transient failures
+     * Add validation for node configurations
+   
+   - Add validation:
+     * Input/output validation for nodes
+     * Graph structure validation
+     * State consistency checks
+
+2. Testing and Documentation
+   - Add more example workflows
+   - Create comprehensive test suite
+   - Document graph patterns and best practices
+   - Add API documentation
+
+3. Tools Integration
+   - Integrate more AI tools
+   - Add tool validation framework
+   - Create tool discovery mechanism
+
+Backlog
+-------
+- Memory system implementation
+- Context supplier framework
+- Evaluator system
+- Character system integration
+- Workflow templating system
+- Graph visualization tools
+- Performance monitoring
+- State persistence
+- Parallel execution support
+
+Completed
+---------
+✓ Base agent implementation
+✓ OpenPipe integration
+✓ Tool system foundation
+✓ Graph system core
+✓ Basic workflow testing
+✓ Discord reader tool
+✓ Terminal node handling
+✓ State management between nodes
