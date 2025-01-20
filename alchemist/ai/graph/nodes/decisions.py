@@ -3,6 +3,7 @@
 import logging
 from typing import Dict, Any, Optional, List
 from pydantic import Field
+import asyncio
 
 from alchemist.ai.graph.base import NodeState
 from alchemist.ai.graph.nodes.base.llm import LLMNode
@@ -172,4 +173,102 @@ class MultiChoiceNode(LLMNode):
                 "prompt": formatted_prompt if 'formatted_prompt' in locals() else None,
                 "choices": self.choices
             }
-            return self.next_nodes.get("error") 
+            return self.next_nodes.get("error")
+
+async def test_binary_decision_node():
+    """Test binary decision node functionality."""
+    print("\nTesting BinaryDecisionNode...")
+    
+    # Create test agent that always says yes
+    class TestAgent:
+        async def get_response(self, prompt: str) -> str:
+            return "yes"
+    
+    # Create test node
+    node = BinaryDecisionNode(
+        id="test_binary",
+        prompt="Is {value} greater than 10?",
+        agent=TestAgent(),
+        next_nodes={
+            "yes": "yes_node",
+            "no": "no_node",
+            "error": "error_node"
+        }
+    )
+    
+    # Create test state
+    state = NodeState()
+    state.context.metadata["value"] = 15
+    
+    # Process node
+    next_id = await node.process(state)
+    
+    # Verify results
+    assert next_id == "yes_node", f"Expected 'yes_node', got {next_id}"
+    assert state.results["test_binary"]["decision"] == "yes", "Incorrect decision"
+    print("BinaryDecisionNode test passed!")
+
+async def test_multi_choice_node():
+    """Test multi-choice node functionality."""
+    print("\nTesting MultiChoiceNode...")
+    
+    # Create test agent that always picks first choice
+    class TestAgent:
+        async def get_response(self, messages: list) -> str:
+            return "tech"
+    
+    # Create test node
+    node = MultiChoiceNode(
+        id="test_multi",
+        prompt="Categorize this content about {topic}",
+        choices=["tech", "news", "other"],
+        agent=TestAgent(),
+        next_nodes={
+            "tech": "tech_node",
+            "news": "news_node",
+            "other": "other_node",
+            "error": "error_node"
+        }
+    )
+    
+    # Create test state
+    state = NodeState()
+    state.context.metadata["topic"] = "artificial intelligence"
+    
+    # Process node
+    next_id = await node.process(state)
+    
+    # Verify results
+    assert next_id == "tech_node", f"Expected 'tech_node', got {next_id}"
+    assert state.results["test_multi"]["choice"] == "tech", "Incorrect choice"
+    print("MultiChoiceNode test passed!")
+
+async def test_error_handling():
+    """Test error handling in decision nodes."""
+    print("\nTesting error handling...")
+    
+    # Test missing context metadata
+    node = BinaryDecisionNode(
+        id="test_error",
+        prompt="This will fail: {missing_key}",
+        next_nodes={"error": "error_node"}
+    )
+    
+    state = NodeState()
+    next_id = await node.process(state)
+    
+    assert next_id == "error_node", "Error not handled correctly"
+    assert "error" in state.results["test_error"], "Error not recorded in state"
+    print("Error handling test passed!")
+
+async def run_all_tests():
+    """Run all decision node tests."""
+    print("Running decision node tests...")
+    await test_binary_decision_node()
+    await test_multi_choice_node()
+    await test_error_handling()
+    print("\nAll decision node tests passed!")
+
+if __name__ == "__main__":
+    print(f"Running tests from: {__file__}")
+    asyncio.run(run_all_tests()) 
