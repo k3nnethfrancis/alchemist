@@ -1,5 +1,47 @@
 # Alchemist Development Notes
 
+## Project Structure
+
+### alchemist/ai/
+Core AI functionality and graph-based agent orchestration
+
+#### base/ [CORE]
+- agent.py: Core provider-agnostic BaseAgent implementation with OpenPipe integration
+- tools.py: Base tool definitions and core tool implementations
+- runtime.py: Environment and session management for agent execution
+
+#### graph/ [CORE - IN PROGRESS]
+Workflow system for complex agent behaviors
+- base.py: Core graph framework with state management
+- nodes/
+  - base/: Base node implementations (LLM, Tool nodes)
+  - actions.py: Action node implementations
+  - decisions.py: Decision node logic
+  - context.py: Context management for nodes
+  - evaluators.py: Response evaluation system
+
+#### prompts/ [CORE]
+- base.py: Core prompt templates and persona configurations
+- persona.py: Pre-defined agent personalities
+
+#### agents/ [EXAMPLES]
+Reference implementations to be rebuilt using the graph system
+- eliza/: Example of conversation workflow
+- terminal/: Example of tool execution patterns
+
+### alchemist/core/
+Core infrastructure and platform integrations
+
+#### extensions/ [CORE]
+Platform-specific implementations
+- discord/: [COMPLETE] First platform integration
+  - client.py: Discord bot client implementation
+  - runtime.py: Discord-specific runtime environment
+- config.py: Extension configuration management
+
+#### logger.py
+Centralized logging configuration
+
 ## Architecture Overview
 1. Core Agent System [DONE]:
    - BaseAgent implementation with OpenPipe integration
@@ -40,15 +82,31 @@
 
 ## Current Status
 - Tools are properly integrated and functioning:
-  - CalculatorTool: Basic arithmetic operations
-  - ImageGenerationTool: DALL-E 3 integration
-  - DiscordReaderTool: Channel history with embed support
+  - CalculatorTool: Basic arithmetic operations [TESTED]
+  - ImageGenerationTool: DALL-E 3 integration [TESTED]
+  - DiscordReaderTool: Channel history with embed support [COMPLETE]
+    - Supports natural language queries
+    - Handles rich embeds and attachments
+    - Configurable via bot service
+    - Returns structured JSON responses
+    - Proper error handling
+    - Tested with ai-news channel
 
 - Discord Extension is complete:
   - Message processing and tool execution
-  - Runtime integration
-  - Image generation support
-  - Enhanced embed handling
+  - Runtime integration with local bot service
+  - Channel configuration management
+  - Enhanced embed handling and formatting
+  - Support for service and direct modes
+  - Proper async/await implementation
+
+- Testing Framework:
+  - Functional tests for each tool
+  - Async test support
+  - Proper logging and verification
+  - Mock service responses
+  - Channel configuration handling
+  - Rich embed verification
 
 - Graph Workflow Framework:
   - Base implementation with state management

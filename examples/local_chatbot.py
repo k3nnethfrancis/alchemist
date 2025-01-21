@@ -14,7 +14,8 @@ from dotenv import load_dotenv
 from alchemist.ai.base.agent import BaseAgent
 from alchemist.ai.base.runtime import RuntimeConfig, LocalRuntime
 from alchemist.ai.prompts.persona import KEN_E
-from alchemist.ai.base.tools import CalculatorTool, ImageGenerationTool
+from alchemist.ai.tools.calculator import CalculatorTool
+from alchemist.ai.tools.image import ImageGenerationTool
 
 # Basic logging setup
 logging.basicConfig(level=logging.INFO, format='%(message)s')

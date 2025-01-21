@@ -1,11 +1,18 @@
 """Newsletter Automata: A graph-based workflow for generating AI newsletters from Discord content."""
 
+import os
+import sys
 from typing import Dict, Any, Optional, List
 from datetime import datetime, timedelta
 import logging
 import asyncio
 import discord
 from pydantic import Field
+
+# Add parent directory to path
+file = os.path.abspath(__file__)
+parent = os.path.dirname(os.path.dirname(os.path.dirname(file)))
+sys.path.insert(0, parent)
 
 from alchemist.ai.graph.base import Graph, NodeState, NodeContext
 from alchemist.ai.graph.nodes.base import LLMNode

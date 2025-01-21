@@ -1,4 +1,12 @@
-"""Example workflow demonstrating graph system functionality."""
+"""Example workflow demonstrating graph system functionality.
+
+This module provides a complete example of how to build and test a content processing
+workflow using the Alchemist graph system. It demonstrates:
+- Custom LLM nodes for content analysis and filtering
+- Tool nodes for content formatting
+- Graph construction and execution
+- State management between nodes
+"""
 
 import os
 import sys
@@ -20,6 +28,7 @@ from alchemist.ai.graph.base import Graph, NodeState
 from alchemist.ai.graph.nodes.base.llm import LLMNode
 from alchemist.ai.graph.nodes.base.tool import ToolNode
 from alchemist.ai.base.agent import BaseAgent
+from alchemist.ai.base.tools import BaseTool
 
 class ContentAnalysisNode(LLMNode):
     """Node for analyzing content using LLM."""
@@ -90,23 +99,48 @@ Answer with just the category name."""
     async def process(self, state: NodeState) -> Optional[str]:
         logger.info(f"\nCategorizing content in {self.id}...")
         try:
-            next_id = await super().process(state)
-            if next_id:
-                # Route based on category
-                response = state.results[self.id]["response"].strip().upper()
-                next_node = response.lower()
-                logger.info(f"Category decision: {response}, routing to: {next_node}")
-                return self.next_nodes.get(next_node, self.next_nodes.get("other"))
-            return next_id
+            # Get LLM response
+            formatted_prompt = self.prompt.format(**state.results)
+            response = await self.agent._step(formatted_prompt)
+            
+            # Store result
+            state.results[self.id] = {"response": response}
+            
+            # Route based on category
+            response = response.strip().upper()
+            next_node = response.lower()
+            logger.info(f"Category decision: {response}, routing to: {next_node}")
+            return self.next_nodes.get(next_node, self.next_nodes.get("other"))
+            
         except Exception as e:
             logger.error(f"Error in categorization: {str(e)}")
-            raise
+            state.results[self.id] = {"error": str(e)}
+            return self.next_nodes.get("error")
+
+class ContentFormatterTool(BaseTool):
+    """Tool for formatting content."""
+    name: str = "content_formatter"
+    description: str = "Formats content with analysis and category into markdown"
+
+    async def call(self, format: str, content: str, analysis: str, category: str) -> str:
+        """Format the content into markdown."""
+        return f"""# Content Analysis
+
+## Content
+{content}
+
+## Analysis
+{analysis}
+
+## Category
+{category}
+"""
 
 class ContentFormattingNode(ToolNode):
     """Node for formatting content using a tool."""
     
     def __init__(self, **data):
-        data["tool_name"] = "content_formatter"
+        data["tool"] = ContentFormatterTool()
         data["tool_args"] = {
             "format": "markdown",
             "content": "{content}",
@@ -114,6 +148,28 @@ class ContentFormattingNode(ToolNode):
             "category": "{categorize.response}"
         }
         super().__init__(**data)
+    
+    async def process(self, state: NodeState) -> Optional[str]:
+        """Process the formatting request."""
+        logger.info(f"\nFormatting content in {self.id}...")
+        try:
+            # Format the tool arguments
+            args = {}
+            for key, template in self.tool_args.items():
+                args[key] = template.format(**state.results)
+            
+            # Execute the tool
+            result = await self.tool.call(**args)
+            
+            # Store result
+            state.results[self.id] = {"response": result}
+            
+            return self.next_nodes.get("default")
+            
+        except Exception as e:
+            logger.error(f"Error in formatting: {str(e)}")
+            state.results[self.id] = {"error": str(e)}
+            return self.next_nodes.get("error")
 
 async def build_workflow() -> Graph:
     """Build example content processing workflow."""

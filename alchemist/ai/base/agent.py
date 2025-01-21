@@ -44,7 +44,7 @@ from openpipe import OpenAI as OpenPipeClient
 
 from alchemist.ai.prompts.base import create_system_prompt, PersonaConfig
 from alchemist.ai.prompts.persona import BASE_ASSISTANT
-from alchemist.ai.base.tools import CalculatorTool
+from alchemist.ai.tools.calculator import CalculatorTool
 
 logger = logging.getLogger(__name__)
 

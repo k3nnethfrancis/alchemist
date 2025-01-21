@@ -11,7 +11,7 @@ from alchemist.ai.graph.nodes.decisions import BinaryDecisionNode, MultiChoiceNo
 from alchemist.ai.graph.nodes.context import TimeContextNode, MemoryContextNode
 from alchemist.ai.graph.nodes.evaluators import EvaluatorNode
 from alchemist.ai.base.agent import BaseAgent
-from alchemist.ai.base.tools import BaseTool
+from mirascope.core import BaseTool
 
 class TestAgent(BaseAgent):
     """Test agent that returns predefined responses."""
