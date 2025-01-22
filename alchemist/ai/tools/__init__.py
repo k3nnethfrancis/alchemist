@@ -13,11 +13,23 @@ from typing import List, Type
 from mirascope.core import BaseTool
 
 from .calculator import CalculatorTool
-from .discord_tool import DiscordReaderTool
 from .image import ImageGenerationTool
+from .discord_tool import DiscordTools
 
-__all__: List[Type[BaseTool]] = [
-    CalculatorTool,
-    DiscordReaderTool,
-    ImageGenerationTool
-] 
+__all__ = [
+    "CalculatorTool",
+    "ImageGenerationTool",
+    "DiscordTools",
+]
+
+def get_available_tools() -> List[Type[BaseTool]]:
+    """Get a list of all available tools.
+    
+    Returns:
+        List[Type[BaseTool]]: List of tool classes
+    """
+    return [
+        CalculatorTool,
+        ImageGenerationTool,
+        DiscordTools,
+    ] 

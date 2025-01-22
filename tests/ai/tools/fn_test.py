@@ -12,13 +12,13 @@ import os
 from dotenv import load_dotenv
 import aiohttp
 import json
+from datetime import datetime, timedelta, timezone
 
 # Add project root to Python path
 project_root = Path(__file__).parent.parent.parent.parent
 sys.path.insert(0, str(project_root))
 
-from alchemist.ai.tools import CalculatorTool, ImageGenerationTool, DiscordReaderTool
-from alchemist.core.extensions.discord.runtime import DiscordRuntime, DiscordRuntimeConfig
+from alchemist.ai.tools import CalculatorTool, ImageGenerationTool, DiscordTools
 
 # Configure logging
 logging.basicConfig(
@@ -27,92 +27,106 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# def test_calculator():
-#     """Test calculator with a complex expression."""
-#     print("\n=== Calculator Tool Test ===")
-#     logger.info("Testing Calculator Tool")
-#     
-#     expr = "(2 + 3) * 4"  # Tests parentheses and multiple operations
-#     logger.info(f"Expression: {expr}")
-#     tool = CalculatorTool(expression=expr)
-#     result = tool.call()
-#     logger.info(f"Result: {result}")
-#     print(f"{expr} = {result}")
+def test_calculator():
+    """Test calculator with a complex expression."""
+    print("\n=== Calculator Tool Test ===")
+    logger.info("Testing Calculator Tool")
+    
+    expr = "(2 + 3) * 4"  # Tests parentheses and multiple operations
+    logger.info(f"Expression: {expr}")
+    tool = CalculatorTool(expression=expr)
+    result = tool.call()
+    logger.info(f"Result: {result}")
+    print(f"{expr} = {result}")
 
-# async def test_image_generation():
-#     """Test image generation with a detailed prompt."""
-#     print("\n=== Image Generation Tool Test ===")
-#     logger.info("Testing Image Generation Tool")
-#     
-#     prompt = "A serene lake at sunset with mountains in the background"
-#     logger.info(f"Prompt: {prompt}")
-#     tool = ImageGenerationTool(prompt=prompt)
-#     try:
-#         result = await tool.call()
-#         logger.info(f"Generated image URL: {result}")
-#         print(f"Image URL: {result}")
-#     except Exception as e:
-#         logger.error(f"Error: {str(e)}")
-#         print(f"Error: {str(e)}")
+async def test_image_generation():
+    """Test image generation with a detailed prompt."""
+    print("\n=== Image Generation Tool Test ===")
+    logger.info("Testing Image Generation Tool")
+    
+    prompt = "A serene lake at sunset with mountains in the background"
+    logger.info(f"Prompt: {prompt}")
+    tool = ImageGenerationTool(prompt=prompt)
+    try:
+        result = await tool.call()
+        logger.info(f"Generated image URL: {result}")
+        print(f"Image URL: {result}")
+    except Exception as e:
+        logger.error(f"Error: {str(e)}")
+        print(f"Error: {str(e)}")
 
-async def test_discord_reader():
-    """Test the DiscordReaderTool with a natural language query to read messages from a channel."""
+async def test_discord():
+    """Test Discord toolkit with real channel data."""
+    print("\n=== Discord Toolkit Test ===")
+    logger.info("Testing Discord Toolkit")
     
-    logging.info("Starting Discord Reader Tool test...")
+    # Load channel data from config
+    config_path = project_root / "config" / "channels.json"
+    with open(config_path) as f:
+        data = json.load(f)
+        channels = data["channels"]
+        categories = data["categories"]
     
-    # Get channel configuration from bot service
-    async with aiohttp.ClientSession() as session:
-        async with session.get("http://localhost:5000/channels") as resp:
-            config = await resp.json()
-            logging.info(f"Got channel configuration: {config}")
+    logger.info(f"Found {len(channels)} channels in {len(categories)} categories")
+    print("\nAvailable channels:")
+    for name, id in channels.items():
+        print(f"  #{name}: {id}")
     
-    # Configure the tool with channel data
-    tool = DiscordReaderTool()
-    await tool.configure(channels=config["channels"], categories=config["categories"])
+    # Create toolkit instance
+    toolkit = DiscordTools(
+        channels=channels,
+        categories=categories
+    )
     
     # Test reading from ai-news channel
-    query = "Read #ai-news"
-    result = await tool.call(query)
+    channel_name = "ai-news"
+    print(f"\nTrying to read #{channel_name}")
     
-    # Parse the JSON response
-    response = json.loads(result)
-    messages = response.get("messages", [])
+    try:
+        messages = await toolkit.read_channel(
+            channel_name=channel_name,
+            limit=5
+        )
+        print(f"Retrieved {len(messages)} messages")
+        if messages:
+            msg = messages[0]
+            print("Latest message:")
+            print(f"  Author: {msg['author']}")
+            print(f"  Content: {msg['content'][:100]}...")
+            if msg["embeds"]:
+                print(f"  Embeds: {len(msg['embeds'])}")
+                embed = msg["embeds"][0]
+                print(f"    Title: {embed.get('title')}")
+                print(f"    Description: {embed.get('description', '')[:100]}...")
+    except Exception as e:
+        print(f"Error reading {channel_name}: {str(e)}")
     
-    # Count messages with embeds
-    embeds_found = sum(1 for msg in messages if msg.get("embeds"))
-    logging.info(f"Found {embeds_found} messages with embeds")
+    # Test reading from agent-sandbox
+    channel_name = "agent-sandbox"
+    print(f"\nTrying to read #{channel_name}")
     
-    # Log a sample message with embeds for verification
-    for msg in messages:
-        if msg.get("embeds"):
-            # Log message details
-            logging.info(f"Sample message:")
-            logging.info(f"  ID: {msg.get('id')}")
-            logging.info(f"  Timestamp: {msg.get('timestamp')}")
-            logging.info(f"  Author: {msg.get('author')}")
-            logging.info(f"  Content: {msg.get('content')}")
-            
-            # Log embed details
-            for embed in msg.get("embeds", []):
-                logging.info("  Embed:")
-                logging.info(f"    Title: {embed.get('title')}")
-                logging.info(f"    Description: {embed.get('description')}")
-                if embed.get("fields"):
-                    logging.info("    Fields:")
-                    for field in embed.get("fields", []):
-                        logging.info(f"      {field.get('name')}: {field.get('value')}")
-            break
-    
-    return result
+    try:
+        messages = await toolkit.read_channel(
+            channel_name=channel_name,
+            limit=5
+        )
+        print(f"Retrieved {len(messages)} messages")
+        if messages:
+            msg = messages[0]
+            print("Latest message:")
+            print(f"  Author: {msg['author']}")
+            print(f"  Content: {msg['content'][:100]}...")
+    except Exception as e:
+        print(f"Error reading {channel_name}: {str(e)}")
 
 async def main():
     """Run all functional tests."""
     print("Starting Functional Tests")
     print("=" * 50)
     
-    # test_calculator()
-    # await test_image_generation()
-    await test_discord_reader()
+    test_calculator()
+    await test_image_generation()
+    await test_discord()
     
     print("\n" + "=" * 50)
     print("Functional tests complete - check logs for details")

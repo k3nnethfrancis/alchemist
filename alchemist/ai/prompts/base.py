@@ -7,9 +7,9 @@ conversation history.
 """
 
 from datetime import datetime
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 
-from mirascope.core import BaseMessageParam, Messages, prompt_template
+from mirascope.core import BaseMessageParam, Messages, prompt_template, BaseTool, BaseToolKit, toolkit_tool
 from pydantic import BaseModel, Field
 
 class PersonaConfig(BaseModel):
@@ -84,9 +84,19 @@ The date and time is {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
 {chr(10).join(f'- {item}' for item in persona.style['all'])}
 ###
 You are entering a discord server to converse with your human friends. It's a chill day...
-Begin simulation...
-"""
 
+You have access to the server's channels through the 'channels' mapping in your context.
+When using the Discord reader tool:
+1. Look up the channel name (without #) in context.channels to get its ID
+2. Calculate the correct timestamp based on the user's request
+3. Call the tool with the channel ID and timestamp
+
+For example, if the user asks "Read the last hour of messages from #ai-news":
+1. Look up 'ai-news' in context.channels to get the ID
+2. Calculate timestamp as current time minus 1 hour
+3. Call the tool with these parameters
+
+Begin simulation..."""
 ## Test formatting
 if __name__ == "__main__":
     from alchemist.ai.prompts.persona import AUG_E

@@ -1,161 +1,123 @@
-"""Discord tool for reading channel history.
+"""Discord toolkit for reading channel history.
 
-This module provides tools for:
-- Reading channel history
-- Extracting messages based on queries
-- Supporting time-based filtering
-- Handling embeds and attachments
+This module provides tools for reading message history from Discord channels
+via a local bot service. Features:
+- Channel history retrieval with name-based lookup
+- Time-based filtering
+- Rich content support (embeds, attachments)
 """
 
 import logging
 from typing import Dict, List, Optional, Any
 from datetime import datetime
 import aiohttp
-from mirascope.core import BaseTool
-from pydantic import BaseModel
-import json
-import re
+from mirascope.core import BaseTool, BaseToolKit, toolkit_tool
+from pydantic import Field, BaseModel
 
 logger = logging.getLogger(__name__)
 
-class DiscordReaderTool(BaseTool):
-    """Tool for reading Discord channel history.
+class DiscordTools(BaseToolKit):
+    """A toolkit for reading Discord channel history.
     
-    This tool connects to a local Discord bot service to read channel history.
-    It supports both direct channel access and service mode, and can handle
-    rich content like embeds and attachments.
+    This toolkit provides tools for interacting with Discord channels and
+    automatically handles channel name to ID mapping.
     
-    Example:
-        ```python
-        tool = DiscordReaderTool()
-        await tool.configure(
-            channels={"ai-news": "123456789"},
-            categories={"ai": ["ai-news"]}
-        )
-        messages = await tool.call("Read #ai-news")
-        ```
+    Attributes:
+        channels: Mapping of channel names to IDs
+        categories: Mapping of category names to channel lists
+        service_url: URL of the local Discord bot service
     """
     
-    service_url: str = "http://localhost:5000"
-    _channels: Dict[str, str] = {}
-    _categories: Dict[str, List[str]] = {}
+    __namespace__ = "discord_tools"
     
-    def __init__(self, channels: dict = None):
-        """Initialize the Discord reader tool.
-        
-        Args:
-            channels: Optional dict mapping channel names to IDs
-        """
-        super().__init__()
-        if channels:
-            self.configure(channels)
-        
-    async def configure(self, channels: Dict[str, str], categories: Dict[str, List[str]]):
-        """Configure the tool with channel mappings.
-        
-        Args:
-            channels: Dict mapping channel names to IDs
-            categories: Dict mapping category names to channel names
-        """
-        self._channels = channels
-        self._categories = categories
-        logger.info(f"Configured DiscordReaderTool with {len(channels)} channels")
-        
-    async def _format_message(self, msg: dict) -> str:
-        """Format a single message with its embeds."""
-        timestamp = msg.get('timestamp', '')
-        author = msg.get('author', 'Unknown')
-        content = msg.get('content', '')
-        embeds = msg.get('embeds', [])
-        
-        formatted = f"[{timestamp}] {author}"
-        if content:
-            formatted += f": {content}"
-        
-        if embeds:
-            formatted += "\nEmbeds:"
-            for embed in embeds:
-                if embed.get('title'):
-                    formatted += f"\n  Title: {embed['title']}"
-                if embed.get('description'):
-                    desc = embed['description'].replace('\n', '\n    ')  # Indent description
-                    formatted += f"\n  Description:\n    {desc}"
-                if embed.get('fields'):
-                    formatted += "\n  Fields:"
-                    for field in embed['fields']:
-                        formatted += f"\n    {field.get('name', '')}: {field.get('value', '')}"
-        return formatted
+    channels: Dict[str, str] = Field(
+        description="Mapping of channel names to IDs"
+    )
+    categories: Dict[str, List[str]] = Field(
+        description="Mapping of category names to channel lists"
+    )
+    service_url: str = Field(
+        default="http://localhost:5000",
+        description="URL of the local Discord bot service"
+    )
 
-    async def _call_service(self, channel_id: str) -> List[Dict[str, Any]]:
-        """Call the Discord bot service to get messages from a channel.
-        
-        Args:
-            channel_id: The ID of the channel to read messages from.
-            
-        Returns:
-            List[Dict[str, Any]]: List of message objects containing:
-                - id: Message ID
-                - content: Message content
-                - author: Author name
-                - timestamp: Message timestamp
-                - embeds: List of embeds with fields like title, description, fields, etc.
-                - attachments: List of attachments
-        """
-        async with aiohttp.ClientSession() as session:
-            url = f"{self.service_url}/history/{channel_id}?limit=100"
-            async with session.get(url) as response:
-                if response.status != 200:
-                    return []
-                data = await response.json()
-                messages = data.get("messages", [])
-                
-                # Process each message to ensure proper structure
-                processed_messages = []
-                for msg in messages:
-                    processed_msg = {
-                        "id": msg.get("id"),
-                        "content": msg.get("content", ""),
-                        "author": msg.get("author") if isinstance(msg.get("author"), str) else msg.get("author", {}).get("name", "Unknown"),
-                        "timestamp": msg.get("timestamp"),
-                        "embeds": [{
-                            "title": embed.get("title"),
-                            "description": embed.get("description"),
-                            "fields": embed.get("fields", []),
-                            "color": embed.get("color"),
-                            "footer": embed.get("footer"),
-                            "thumbnail": embed.get("thumbnail"),
-                            "url": embed.get("url")
-                        } for embed in msg.get("embeds", [])],
-                        "attachments": msg.get("attachments", [])
-                    }
-                    processed_messages.append(processed_msg)
-                
-                return processed_messages
+    @toolkit_tool
+    async def read_channel(
+        self,
+        channel_name: str,
+        after: Optional[datetime] = None,
+        limit: int = 100
+    ) -> List[Dict[str, Any]]:
+        """Read message history from a Discord channel.
 
-    async def call(self, query: str) -> str:
-        """Call the Discord reader tool with a query.
-        
-        Args:
-            query: The query string in the format "Read #channel-name"
-            
-        Returns:
-            str: JSON string containing messages from the channel
+        Available channels: {', '.join(self.channels.keys())}
         """
-        # Extract channel name from query
-        match = re.search(r"Read #([a-zA-Z0-9-]+)", query)
-        if not match:
-            return json.dumps({"error": "Invalid query format. Use: Read #channel-name"})
+        try:
+            # Strip # if present and look up channel ID
+            clean_name = channel_name.lstrip('#')
+            channel_id = self.channels.get(clean_name)
+            if not channel_id:
+                raise ValueError(f"Channel '{channel_name}' not found")
+                
+            url = f"{self.service_url}/history/{channel_id}?limit={limit}"
+            if after:
+                url += f"&after={after.isoformat()}"
+                
+            async with aiohttp.ClientSession() as session:
+                async with session.get(url) as response:
+                    if response.status != 200:
+                        raise Exception(f"Failed to get messages: {response.status}")
+                        
+                    data = await response.json()
+                    messages = data.get("messages", [])
+                    
+                    # Process messages to ensure consistent structure
+                    processed_messages = []
+                    for msg in messages:
+                        processed_msg = {
+                            "id": msg.get("id"),
+                            "content": msg.get("content", ""),
+                            "author": msg.get("author") if isinstance(msg.get("author"), str) else msg.get("author", {}).get("name", "Unknown"),
+                            "timestamp": msg.get("timestamp"),
+                            "embeds": [{
+                                "title": embed.get("title"),
+                                "description": embed.get("description"),
+                                "fields": embed.get("fields", []),
+                                "color": embed.get("color"),
+                                "footer": embed.get("footer"),
+                                "thumbnail": embed.get("thumbnail"),
+                                "url": embed.get("url")
+                            } for embed in msg.get("embeds", [])],
+                            "attachments": msg.get("attachments", [])
+                        }
+                        processed_messages.append(processed_msg)
+                    
+                    return processed_messages
+                    
+        except aiohttp.ClientError as e:
+            logger.error(f"HTTP error reading Discord channel: {str(e)}")
+            raise Exception(f"Failed to get messages: {str(e)}")
+        except ValueError as e:
+            logger.error(f"Error reading Discord channel: {str(e)}")
+            raise
+        except Exception as e:
+            logger.error(f"Error reading Discord channel: {str(e)}")
+            raise Exception(f"Failed to get messages: {str(e)}")
+
+    def get_system_prompt(self) -> str:
+        """Get the system prompt extension for Discord tools.
         
-        channel_name = match.group(1)
-        
-        # Get channel ID
-        channel_id = self._channels.get(channel_name)
-        if not channel_id:
-            return json.dumps({"error": f"Channel '{channel_name}' not found"})
-        
-        # Get messages from service
-        messages = await self._call_service(channel_id)
-        
-        return json.dumps({
-            "messages": messages
-        }) 
+        Returns:
+            str: System prompt extension with available channels and usage instructions
+        """
+        prompt = "\nAvailable Discord channels:\n"
+        for category, channel_list in self.categories.items():
+            prompt += f"\n{category}:\n"
+            for channel in channel_list:
+                prompt += f"  #{channel}\n"
+                
+        prompt += "\nWhen using the Discord reader tool:"
+        prompt += "\n1. Use the channel name (with or without #)"
+        prompt += "\n2. Optionally specify a time filter"
+        prompt += "\n3. Messages will be returned newest first"
+        return prompt 
