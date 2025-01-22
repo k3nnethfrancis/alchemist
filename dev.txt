@@ -72,9 +72,9 @@ Centralized logging configuration
      - Twitter [PLANNED]
      - LinkedIn [PLANNED]
    - ToolKits (Plugin-like Tool Collections):
-     - Grouped tool functionality
-     - Shared context and usage patterns
-     - Configurable tool combinations
+     - Grouped tool functionality [IMPLEMENTED]
+     - Shared context and usage patterns [IMPLEMENTED]
+     - Configurable tool combinations [IMPLEMENTED]
    - Memory System:
      - Vector embeddings
      - Relational storage
@@ -84,13 +84,19 @@ Centralized logging configuration
 - Tools are properly integrated and functioning:
   - CalculatorTool: Basic arithmetic operations [TESTED]
   - ImageGenerationTool: DALL-E 3 integration [TESTED]
-  - DiscordReaderTool: Channel history with embed support [COMPLETE]
-    - Supports natural language queries
-    - Handles rich embeds and attachments
-    - Configurable via bot service
-    - Returns structured JSON responses
-    - Proper error handling
-    - Tested with ai-news channel
+  - DiscordTools: Channel history with embed support [COMPLETE]
+    - Mirascope toolkit pattern implementation [DONE]
+    - Dynamic channel configuration from config file [DONE]
+    - Proper docstring templating with self attributes [DONE]
+    - Supports natural language queries [DONE]
+    - Handles rich embeds and attachments [DONE]
+    - Configurable via bot service [DONE]
+    - Returns structured JSON responses [DONE]
+    - Proper error handling [DONE]
+    - Tested with ai-news channel [DONE]
+    - Async/await implementation with aiohttp [DONE]
+    - Comprehensive functional testing [DONE]
+    - Proper embed handling with None filtering [DONE]
 
 - Discord Extension is complete:
   - Message processing and tool execution
@@ -101,12 +107,14 @@ Centralized logging configuration
   - Proper async/await implementation
 
 - Testing Framework:
-  - Functional tests for each tool
-  - Async test support
-  - Proper logging and verification
-  - Mock service responses
-  - Channel configuration handling
-  - Rich embed verification
+  - Functional tests for each tool [DONE]
+  - Async test support [DONE]
+  - Proper logging and verification [DONE]
+  - Mock service responses [IN PROGRESS]
+  - Channel configuration handling [DONE]
+  - Rich embed verification [DONE]
+  - None value validation [DONE]
+  - Error case testing [DONE]
 
 - Graph Workflow Framework:
   - Base implementation with state management
@@ -126,7 +134,13 @@ Centralized logging configuration
    - Tool definitions and base classes
    - Sync and async tool support
    - Error handling and logging
-   - Future: ToolKit support
+   - Mirascope toolkit pattern:
+     - BaseToolKit implementation [DONE]
+     - Dynamic docstring templating [DONE]
+     - Self attribute injection [DONE]
+     - Proper async/await support [DONE]
+     - OpenPipe integration [DONE]
+     - Toolkit test patterns [DONE]
 
 3. runtime.py:
    - Environment management
@@ -159,6 +173,7 @@ Centralized logging configuration
    - ContextSupplier tests
    - Evaluator tests
    - Integration tests
+   - Mock service responses for Discord tests
 
 4. Documentation:
    - Architecture overview
@@ -186,7 +201,7 @@ Centralized logging configuration
    - ToolKit system fourth
 
 3. Platform Extensions:
-   - Stabilize Discord
+   - Stabilize Discord [DONE]
    - Plan Twitter integration
    - Plan LinkedIn integration
 
@@ -323,71 +338,4 @@ Centralized logging configuration
    - Subgraph support
    - State persistence
    - Advanced error handling
-   - Performance optimizations
-
-Development Status
-=================
-
-Current State:
--------------
-1. Discord Tool Implementation
-   - Base implementation in discord_tool.py is working with real channel data
-   - Functional tests in fn_test.py are passing
-   - Unit tests in test_discord.py are in progress
-   
-2. Working Components:
-   - Channel data loading from config/channels.json
-   - Channel name to ID mapping
-   - Message history retrieval
-   - Embed and attachment handling
-   - Error handling for invalid channels
-   
-3. Test Coverage:
-   - Functional tests (fn_test.py): PASSING
-     * Successfully loads channel data
-     * Reads messages from ai-news and agent-sandbox channels
-     * Handles embeds and message formatting
-   
-   - Unit tests (test_discord.py): IN PROGRESS
-     * Channel validation tests passing
-     * Category structure tests passing
-     * Async mock setup needs fixing for:
-       - test_read_channel_success
-       - test_service_error
-
-Next Steps:
-----------
-1. Fix async mock setup in test_discord.py:
-   - Need to properly mock aiohttp.ClientSession context managers
-   - Fix response handling in test_read_channel_success
-   - Ensure error propagation in test_service_error
-
-2. Additional Tests Needed:
-   - Test message processing with different author formats
-   - Test embed processing with various embed structures
-   - Test URL construction with different parameters
-   - Test rate limiting and error handling
-
-3. Documentation:
-   - Add more detailed docstrings
-   - Document error handling behavior
-   - Add usage examples
-
-4. Future Enhancements:
-   - Add support for message sending
-   - Add support for reactions
-   - Add support for thread operations
-   - Add support for user management
-
-Current Issues:
--------------
-1. Async mock setup in test_discord.py not properly handling context managers
-2. Error propagation not consistent in service error test
-3. Need to verify message processing with more edge cases
-
-Dependencies:
-------------
-- aiohttp for async HTTP requests
-- pytest and pytest-asyncio for testing
-- mirascope for toolkit pattern
-- pydantic for data validation 
+   - Performance optimizations 

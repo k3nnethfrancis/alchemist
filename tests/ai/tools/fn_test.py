@@ -78,46 +78,83 @@ async def test_discord():
         categories=categories
     )
     
-    # Test reading from ai-news channel
+    # Test 1: Simple message channel (#gm)
+    channel_name = "gm"
+    print(f"\nTest 1: Reading simple messages from #{channel_name}")
+    try:
+        messages = await toolkit.read_channel(
+            channel_name=channel_name,
+            limit=1
+        )
+        if messages:
+            msg = messages[0]
+            print("Latest message:")
+            print(f"  Author: {msg['author']}")
+            print(f"  Content: {msg['content']}")
+            print(f"  Timestamp: {msg['timestamp']}")
+            assert len(msg['embeds']) == 0, "Expected no embeds in gm channel"
+            print("✅ Simple message test passed")
+        else:
+            print("⚠️ No messages found")
+    except Exception as e:
+        print(f"❌ Error reading {channel_name}: {str(e)}")
+    
+    # Test 2: Complex message channel with embeds (#ai-news)
     channel_name = "ai-news"
-    print(f"\nTrying to read #{channel_name}")
-    
+    print(f"\nTest 2: Reading messages with embeds from #{channel_name}")
     try:
         messages = await toolkit.read_channel(
             channel_name=channel_name,
-            limit=5
+            limit=1
         )
-        print(f"Retrieved {len(messages)} messages")
         if messages:
             msg = messages[0]
             print("Latest message:")
             print(f"  Author: {msg['author']}")
-            print(f"  Content: {msg['content'][:100]}...")
-            if msg["embeds"]:
-                print(f"  Embeds: {len(msg['embeds'])}")
-                embed = msg["embeds"][0]
-                print(f"    Title: {embed.get('title')}")
-                print(f"    Description: {embed.get('description', '')[:100]}...")
+            print(f"  Has content: {'Yes' if msg['content'] else 'No'}")
+            print(f"  Timestamp: {msg['timestamp']}")
+            print(f"  Number of embeds: {len(msg['embeds'])}")
+            
+            if msg['embeds']:
+                embed = msg['embeds'][0]
+                print("\nEmbed structure:")
+                print("  Fields present:")
+                for key, value in embed.items():
+                    if isinstance(value, dict):
+                        print(f"    {key}: {type(value).__name__} with keys {list(value.keys())}")
+                    else:
+                        print(f"    {key}: {type(value).__name__}")
+                
+                # Verify no None values made it through
+                def check_no_nones(obj):
+                    if isinstance(obj, dict):
+                        for k, v in obj.items():
+                            assert v is not None, f"Found None value in key {k}"
+                            check_no_nones(v)
+                    elif isinstance(obj, list):
+                        for item in obj:
+                            check_no_nones(item)
+                
+                check_no_nones(embed)
+                print("✅ No None values found in embed")
+                print("✅ Complex message test passed")
+        else:
+            print("⚠️ No messages found")
     except Exception as e:
-        print(f"Error reading {channel_name}: {str(e)}")
+        print(f"❌ Error reading {channel_name}: {str(e)}")
     
-    # Test reading from agent-sandbox
-    channel_name = "agent-sandbox"
-    print(f"\nTrying to read #{channel_name}")
-    
+    # Test 3: Invalid channel
+    print("\nTest 3: Testing invalid channel handling")
     try:
-        messages = await toolkit.read_channel(
-            channel_name=channel_name,
-            limit=5
+        await toolkit.read_channel(
+            channel_name="non-existent-channel",
+            limit=1
         )
-        print(f"Retrieved {len(messages)} messages")
-        if messages:
-            msg = messages[0]
-            print("Latest message:")
-            print(f"  Author: {msg['author']}")
-            print(f"  Content: {msg['content'][:100]}...")
+        print("❌ Expected error for invalid channel")
+    except ValueError as e:
+        print(f"✅ Correctly handled invalid channel: {str(e)}")
     except Exception as e:
-        print(f"Error reading {channel_name}: {str(e)}")
+        print(f"❌ Unexpected error type: {str(e)}")
 
 async def main():
     """Run all functional tests."""

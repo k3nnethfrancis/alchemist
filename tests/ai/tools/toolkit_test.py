@@ -1,11 +1,11 @@
 """Test implementation of a basic Mirascope toolkit.
 
 This module demonstrates the basic usage of Mirascope's toolkit pattern
-following their documentation example exactly.
+with async operations for Discord integration.
 """
 
 from typing import Dict, List, Literal, Optional, Any
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 import aiohttp
 from mirascope.core import (
     BaseDynamicConfig,
@@ -17,18 +17,11 @@ from mirascope.core import (
 from pydantic import Field
 import json
 from pathlib import Path
+from openpipe import OpenAI as OpenPipeClient
 
-
+"""
 class BookTools(BaseToolKit):
-    """A toolkit for book recommendations.
-    
-    This follows the exact implementation from Mirascope's documentation
-    to verify our understanding of the toolkit pattern.
-    
-    Attributes:
-        reading_level: The user's reading level (beginner or advanced)
-    """
-    
+    # Commented out book recommendation example
     __namespace__ = "book_tools"
     
     reading_level: Literal["beginner", "advanced"] = Field(
@@ -37,12 +30,8 @@ class BookTools(BaseToolKit):
 
     @toolkit_tool
     def suggest_author(self, author: str) -> str:
-        """Suggests an author for the user to read based on their reading level.
-
-        Reading level: {self.reading_level}
-        """
         return f"I would suggest you read some books by {author}"
-
+"""
 
 class DiscordTools(BaseToolKit):
     """A toolkit for reading Discord channel history.
@@ -72,9 +61,9 @@ class DiscordTools(BaseToolKit):
         after: Optional[datetime] = None,
         limit: int = 100
     ) -> List[Dict[str, Any]]:
-        """Read message history from a Discord channel.
+        """Read messages from a Discord channel.
 
-        Available channels: {', '.join(self.channels.keys())}
+        Available channels: {self.channels}
         """
         # Strip # if present and look up channel ID
         clean_name = channel_name.lstrip('#')
@@ -117,21 +106,13 @@ class DiscordTools(BaseToolKit):
                 
                 return processed_messages
 
-
-@openai.call("gpt-4o-mini")
+"""
+@openai.call("gpt-4o-mini", client=OpenPipeClient())
 def recommend_author(
     genre: str, 
     reading_level: Literal["beginner", "advanced"]
 ) -> BaseDynamicConfig:
-    """Recommend an author based on genre and reading level.
-    
-    Args:
-        genre: The desired book genre
-        reading_level: The user's reading level
-        
-    Returns:
-        BaseDynamicConfig: Configuration with tools and messages
-    """
+    # Commented out book recommendation example
     toolkit = BookTools(reading_level=reading_level)
     return {
         "tools": toolkit.create_tools(),
@@ -142,26 +123,20 @@ def recommend_author(
             )
         ],
     }
+"""
 
-
-@openai.call("gpt-4o-mini")
-async def read_discord_history(
-    channel_name: str,
-    time_filter: Optional[datetime] = None,
-    channels: Dict[str, str] = {},
-    categories: Dict[str, List[str]] = {}
-) -> BaseDynamicConfig:
-    """Read message history from a Discord channel.
+@openai.call("gpt-4o-mini", client=OpenPipeClient())
+def test_discord_toolkit(channel_name: str = "ai-news") -> BaseDynamicConfig:
+    """Test the Discord toolkit pattern by requesting recent AI news."""
+    # Load channel data from config file
+    print("\nLoading channel data from config...")
+    config_path = Path(__file__).parent.parent.parent.parent / "config" / "channels.json"
+    with open(config_path) as f:
+        data = json.load(f)
+        channels = data["channels"]
+        categories = data["categories"]
+        print(f"Found {len(channels)} channels in {len(categories)} categories")
     
-    Args:
-        channel_name: Name of the channel to read from (without #)
-        time_filter: Optional timestamp to filter messages after
-        channels: Mapping of channel names to IDs
-        categories: Mapping of category names to channel lists
-        
-    Returns:
-        BaseDynamicConfig: Configuration with tools and messages
-    """
     toolkit = DiscordTools(
         channels=channels,
         categories=categories
@@ -171,82 +146,42 @@ async def read_discord_history(
         "tools": toolkit.create_tools(),
         "messages": [
             BaseMessageParam(
+                role="system",
+                content="You are a helpful assistant that can read Discord channels and summarize their contents."
+            ),
+            BaseMessageParam(
                 role="user",
-                content=f"Read messages from #{channel_name}"
-                + (f" after {time_filter.isoformat()}" if time_filter else "")
+                content=f"Tell me about the recent messages in the #{channel_name} channel. Summarize the key updates."
             )
         ],
     }
 
-
-async def test_discord():
-    """Test the Discord toolkit implementation."""
-    # Load channel data from config file
-    print("\nLoading channel data from config...")
-    config_path = Path(__file__).parent.parent.parent.parent / "config" / "channels.json"
-    with open(config_path) as f:
-        data = json.load(f)
-        channels = data["channels"]
-        categories = data["categories"]
-        print(f"Found {len(channels)} channels in {len(categories)} categories")
-        print("\nAvailable channels:")
-        for name, id in channels.items():
-            print(f"  #{name}: {id}")
+async def main():
+    """Run the Discord toolkit example."""
+    print("\nTesting Discord AI News Summary...")
     
-    # Test reading channel history
-    print("\nTesting with real Discord service...")
-    
-    # First try ai-news channel
-    channel_name = "ai-news"
-    channel_id = channels.get(channel_name)
-    print(f"\nTrying to read #{channel_name} (ID: {channel_id})")
-    
-    response = await read_discord_history(
-        channel_name=channel_name,
-        channels=channels,
-        categories=categories
-    )
+    response = test_discord_toolkit()
     if tool := response.tool:
         try:
             messages = await tool.call()
-            print(f"Retrieved {len(messages)} messages from #{channel_name}")
+            print(f"\nRetrieved {len(messages)} messages from #ai-news")
             if messages:
-                print("Latest message:", messages[0]["content"][:100] + "...")
+                print("\nLatest messages:")
+                for msg in messages[:5]:  # Show last 5 messages
+                    print(f"\nFrom {msg['author']} at {msg['timestamp']}:")
+                    print(f"Content: {msg['content']}")
+                    if msg['embeds']:
+                        print(f"Embeds: {len(msg['embeds'])}")
+                        for embed in msg['embeds']:
+                            if embed['title']:
+                                print(f"- {embed['title']}")
+                            if embed['description']:
+                                print(f"  {embed['description'][:200]}...")
+            else:
+                print("No messages found in the last 2 hours")
         except Exception as e:
-            print(f"Error reading {channel_name}: {str(e)}")
-            
-    # Then try agent-sandbox
-    channel_name = "agent-sandbox"
-    channel_id = channels.get(channel_name)
-    print(f"\nTrying to read #{channel_name} (ID: {channel_id})")
-    
-    response = await read_discord_history(
-        channel_name=channel_name,
-        channels=channels,
-        categories=categories
-    )
-    if tool := response.tool:
-        try:
-            messages = await tool.call()
-            print(f"Retrieved {len(messages)} messages from #{channel_name}")
-            if messages:
-                print("Latest message:", messages[0]["content"][:100] + "...")
-        except Exception as e:
-            print(f"Error reading {channel_name}: {str(e)}")
-
+            print(f"Error reading ai-news: {str(e)}")
 
 if __name__ == "__main__":
-    # Test book recommendations
-    print("\nTesting Book Recommendations:")
-    response = recommend_author("fantasy", "beginner")
-    if tool := response.tool:
-        print("Beginner recommendation:", tool.call())
-    
-    response = recommend_author("fantasy", "advanced")
-    if tool := response.tool:
-        print("Advanced recommendation:", tool.call())
-    
-    # Test Discord toolkit
-    print("\nTesting Discord Toolkit:")
     import asyncio
-    asyncio.run(test_discord()) 
+    asyncio.run(main()) 

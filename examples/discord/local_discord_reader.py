@@ -1,122 +1,136 @@
-"""
-Simple local chat example using the Discord reader tool.
-Before running, make sure to start the Discord bot service:
-python -m examples.discord.run_bot
+"""Local Discord reader example.
+
+This example demonstrates using the Discord toolkit to read channel messages
+through an interactive chat interface.
 """
 
 import asyncio
+import json
 import logging
 from pathlib import Path
-import aiohttp
-from aiohttp.client_exceptions import ClientConnectorError
-from dotenv import load_dotenv
+from typing import Optional
 
 from alchemist.ai.base.agent import BaseAgent
 from alchemist.ai.base.runtime import RuntimeConfig, LocalRuntime
 from alchemist.ai.prompts.persona import KEN_E
-from alchemist.ai.tools.discord_tool import DiscordToolKit
+from alchemist.ai.tools import DiscordTools
 
-# Basic logging setup
-logging.basicConfig(level=logging.INFO, format='%(message)s')
+# Set up logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
 logger = logging.getLogger(__name__)
 
-async def check_bot_service():
-    """Check if the Discord bot service is running."""
-    logger.info("Checking bot service availability...")
-    try:
-        async with aiohttp.ClientSession() as session:
-            async with session.get("http://localhost:5000/channels") as response:
-                if response.status != 200:
-                    raise RuntimeError("Bot service not available")
-                data = await response.json()
-                logger.info("Successfully connected to bot service")
-                return data
-    except ClientConnectorError as e:
-        raise RuntimeError(
-            "Bot service not running. Start it with: python -m examples.discord.run_bot"
-        ) from e
-
-async def run_with_agent(channel_data: dict):
-    """Example of direct agent initialization and chat."""
-    # Initialize Discord toolkit with channel data
-    toolkit = DiscordToolKit(
-        channels=channel_data["channels"],
-        categories=channel_data["categories"]
-    )
+async def run_with_agent():
+    """Run chat example with direct agent initialization."""
+    print("\nStarting Discord Reader Chat...")
     
-    # Initialize agent with toolkit
+    # Load channel data from config
+    config_path = Path(__file__).parent.parent.parent / "config" / "channels.json"
+    with open(config_path) as f:
+        config = json.load(f)
+        channels = config["channels"]
+        categories = config["categories"]
+        print(f"\nFound {len(channels)} channels in {len(categories)} categories\n")
+        print("Available channels:")
+        for channel in channels:
+            print(f"  #{channel}")
+    
+    # Initialize Discord toolkit and get its tools
+    discord_tools = DiscordTools(channels=channels, categories=categories)
+    
+    # Initialize agent with Discord toolkit functions
     agent = BaseAgent(
-        tools=toolkit.create_tools(),
+        tools=discord_tools.create_tools(),  # Create the actual tools from the toolkit
         persona=KEN_E,
-        context={
-            "channels": channel_data["channels"],
-            "categories": channel_data["categories"]
-        },
-        system_prompt_extension=toolkit.get_system_prompt()
+        provider="openpipe",
+        model="gpt-4o-mini",
     )
-    print("\nChat directly with agent (Ctrl+C to exit)")
     
+    print("\nChat with me! I can read messages from Discord channels.")
+    print('Type "exit", "quit", or send an empty message to end the chat.')
+    print("\nExample commands:")
+    print('- "What are the latest messages in #ai-news?"')
+    print('- "Show me the last 5 messages from #general"')
+    print('- "Summarize recent updates from #resources"\n')
+    
+    # Start chat loop
     while True:
         try:
-            query = input("\nYou: ")
-            if query.lower() in ['exit', 'quit']:
-                print("\nChat session ended. Goodbye! ✨")
+            query = input("\nUser: ")
+            if not query or query.lower() in ["exit", "quit"]:
                 break
             response = await agent._step(query)
             print(f"\nAgent: {response}")
         except KeyboardInterrupt:
-            print("\nChat session ended")
+            break
+        except Exception as e:
+            print(f"Error: {e}")
             break
 
-async def run_with_runtime(channel_data: dict):
-    """Example of using LocalRuntime for a more configured experience."""
-    # Initialize Discord toolkit with channel data
-    toolkit = DiscordToolKit(
-        channels=channel_data["channels"],
-        categories=channel_data["categories"]
+def run_with_runtime():
+    """Run chat example with LocalRuntime for more configuration."""
+    print("\nStarting Discord Reader Chat (with runtime)...")
+    
+    # Load channel data from config
+    config_path = Path(__file__).parent.parent.parent / "config" / "channels.json"
+    with open(config_path) as f:
+        data = json.load(f)
+        channels = data["channels"]
+        categories = data["categories"]
+        print(f"\nFound {len(channels)} channels in {len(categories)} categories")
+        print("\nAvailable channels:")
+        for name in channels:
+            print(f"  #{name}")
+    
+    # Initialize Discord toolkit and get its tools
+    toolkit = DiscordTools(
+        channels=channels,
+        categories=categories
     )
     
-    # Create runtime configuration
+    # Configure runtime
     config = RuntimeConfig(
         provider="openpipe",
-        model="openpipe:ken0-llama31-8B-instruct",
+        model="gpt-4o-mini",
         persona=KEN_E,
-        tools=toolkit.create_tools(),
-        context={
-            "channels": channel_data["channels"],
-            "categories": channel_data["categories"]
-        },
-        system_prompt_extension=toolkit.get_system_prompt(),
-        platform_config={
-            "prompt_prefix": "You: ",
-            "response_prefix": "Assistant: "
-        }
+        tools=toolkit.create_tools()  # Create the actual tools from the toolkit
     )
     
-    # Initialize and start local runtime
-    runtime = LocalRuntime(config)
-    print("\nChat using runtime (Ctrl+C to exit)")
+    # Initialize runtime
+    runtime = LocalRuntime(config=config)
+    runtime.start()
     
-    await runtime.start()
-
-async def main():
-    """Run both chat examples."""
-    try:
-        load_dotenv()  # Load environment variables
-        
-        # Check bot service first
-        channel_data = await check_bot_service()
-        
-        # Uncomment one of these to try different approaches:
-        await run_with_agent(channel_data)  # Direct agent initialization
-        # await run_with_runtime(channel_data)  # Using LocalRuntime
-        
-    except Exception as e:
-        logger.error(f"Error: {str(e)}")
-        raise
+    print("\nChat with me! I can read messages from Discord channels.")
+    print('Type "exit", "quit", or send an empty message to end the chat.')
+    print("\nExample commands:")
+    print('- "What are the latest messages in #ai-news?"')
+    print('- "Show me the last 5 messages from #general"')
+    print('- "Summarize recent updates from #resources"\n')
+    
+    while True:
+        try:
+            # Get user input
+            query = input("\nYou: ").strip()
+            if not query or query.lower() in ["exit", "quit"]:
+                break
+                
+            # Get runtime response
+            response = runtime.chat(query)
+            print(f"\nAssistant: {response}")
+            
+        except KeyboardInterrupt:
+            break
+        except Exception as e:
+            print(f"\nError: {str(e)}")
+            break
+    
+    print("\nChat ended. Goodbye!")
+    runtime.stop()
 
 if __name__ == "__main__":
-    try:
-        asyncio.run(main())
-    except KeyboardInterrupt:
-        print("\nChat session terminated by user.") 
+    # Run both chat examples
+    asyncio.run(run_with_agent())
+    print("\n" + "="*50 + "\n")
+    run_with_runtime() 
