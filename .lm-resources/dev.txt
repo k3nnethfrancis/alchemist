@@ -1,5 +1,128 @@
 # Alchemist Development Notes
 
+## Project Structure
+
+### alchemist/
+├── ai/
+│   ├── agents/                    # [EXAMPLES]
+│   │   ├── eliza/                # Conversation workflow example
+│   │   │   ├── agent.py
+│   │   │   └── workflow.py
+│   │   └── terminal/             # Tool execution patterns
+│   │       ├── persona_agent.py
+│   │       ├── reflection_agent.py
+│   │       ├── session_manager.py
+│   │       ├── terminal_agent.py
+│   │       └── tools/
+│   │           ├── custom_tools.py
+│   │           ├── read_discord_messages.py
+│   │           └── write_discord_message.py
+│   ├── base/                     # [CORE]
+│   │   ├── agent.py             # Provider-agnostic BaseAgent [DONE]
+│   │   └── runtime.py           # Environment management [DONE]
+│   ├── graph/                    # [CORE - IN PROGRESS ~50%]
+│   │   ├── base.py              # Core graph framework
+│   │   └── nodes/
+│   │       ├── base/            # Base node implementations
+│   │       │   ├── llm.py       # LLM node base
+│   │       │   ├── testing.py   # Testing utilities
+│   │       │   └── tool.py      # Tool node base
+│   │       ├── actions.py       # Action node implementations
+│   │       ├── context.py       # Context management
+│   │       ├── decisions.py     # Decision node logic
+│   │       └── evaluators.py    # Response evaluation
+│   ├── prompts/                 # [CORE]
+│   │   ├── base.py             # Core prompt templates
+│   │   └── persona.py          # Agent personalities
+│   └── tools/                   # [CORE]
+│       ├── calculator.py        # Basic arithmetic [TESTED]
+│       ├── discord_tool.py      # Discord integration [COMPLETE]
+│       └── image.py            # Image generation [TESTED]
+└── core/
+    ├── extensions/              # Platform integrations
+    │   ├── config.py           # Extension configuration
+    │   └── discord/            # [COMPLETE]
+    │       ├── client.py       # Discord bot client
+    │       └── runtime.py      # Discord-specific runtime
+    └── logger.py               # Centralized logging
+
+### Additional Project Components
+├── config/                     # Configuration files
+│   └── channels.json          # Discord channel config [DONE]
+├── examples/                   # Example implementations
+│   ├── discord/               # Discord bot examples
+│   │   ├── chatbot.py
+│   │   ├── local_discord_reader.py
+│   │   └── run_bot.py
+│   ├── graph/                 # Graph workflow examples
+│   │   ├── analysis_workflow.py
+│   │   ├── discord_workflow.py
+│   │   ├── newsletter_workflow.py
+│   │   ├── reflection_workflow.py
+│   │   └── workflow_test.py
+│   └── local_chatbot.py
+└── tests/                     # Test suite
+    ├── ai/
+    │   ├── base/             # Core agent tests [DONE]
+    │   ├── graph/            # Graph system tests [IN PROGRESS]
+    │   └── tools/            # Tool implementation tests [DONE]
+    └── core/
+        ├── extensions/       # Platform integration tests
+        └── mirascope/        # Mirascope integration tests
+
+## Current Status
+- Tools are properly integrated and functioning:
+  - CalculatorTool: Basic arithmetic operations [TESTED]
+  - ImageGenerationTool: DALL-E 3 integration [TESTED]
+  - DiscordTools: Channel history with embed support [COMPLETE]
+    - Mirascope toolkit pattern implementation [DONE]
+    - Dynamic channel configuration from config file [DONE]
+    - Proper docstring templating with self attributes [DONE]
+    - Supports natural language queries [DONE]
+    - Handles rich embeds and attachments [DONE]
+    - Configurable via bot service [DONE]
+    - Returns structured JSON responses [DONE]
+    - Proper error handling [DONE]
+    - Tested with ai-news channel [DONE]
+    - Async/await implementation with aiohttp [DONE]
+    - Comprehensive functional testing [DONE]
+    - Proper embed handling with None filtering [DONE]
+    - Improved logging configuration [DONE]
+    - Multi-channel support [IN PROGRESS]
+
+- Newsletter Workflow System [IN PROGRESS]:
+  - Base workflow implementation [DONE]
+  - Content collection from Discord [DONE]
+  - Link extraction and processing [DONE]
+  - Template-based generation [DONE]
+  - Markdown formatting [DONE]
+  - File output management [DONE]
+  - Needs:
+    - State persistence for long runs
+    - Parallel processing for channels
+    - Better error recovery
+    - Proper checkpointing
+    - Integration with ContextSuppliers
+
+- Testing Framework:
+  - Functional tests for each tool [DONE]
+  - Async test support [DONE]
+  - Proper logging and verification [DONE]
+  - Mock service responses [IN PROGRESS]
+  - Channel configuration handling [DONE]
+  - Rich embed verification [DONE]
+  - None value validation [DONE]
+  - Error case testing [DONE]
+  - Newsletter workflow tests [PLANNED]
+
+- Discord Extension is complete:
+  - Message processing and tool execution
+  - Runtime integration with local bot service
+  - Channel configuration management
+  - Enhanced embed handling and formatting
+  - Support for service and direct modes
+  - Proper async/await implementation
+
 ## Architecture Overview
 1. Core Agent System [DONE]:
    - BaseAgent implementation with OpenPipe integration
@@ -30,32 +153,13 @@
      - Twitter [PLANNED]
      - LinkedIn [PLANNED]
    - ToolKits (Plugin-like Tool Collections):
-     - Grouped tool functionality
-     - Shared context and usage patterns
-     - Configurable tool combinations
+     - Grouped tool functionality [IMPLEMENTED]
+     - Shared context and usage patterns [IMPLEMENTED]
+     - Configurable tool combinations [IMPLEMENTED]
    - Memory System:
      - Vector embeddings
      - Relational storage
      - Context-aware retrieval
-
-## Current Status
-- Tools are properly integrated and functioning:
-  - CalculatorTool: Basic arithmetic operations
-  - ImageGenerationTool: DALL-E 3 integration
-  - DiscordReaderTool: Channel history with embed support
-
-- Discord Extension is complete:
-  - Message processing and tool execution
-  - Runtime integration
-  - Image generation support
-  - Enhanced embed handling
-
-- Graph Workflow Framework:
-  - Base implementation with state management
-  - LLM nodes for content processing
-  - Decision nodes for flow control
-  - Need: Integration with ContextSuppliers
-  - Need: Integration with Evaluators
 
 ## Core Components
 1. agent.py:
@@ -68,7 +172,13 @@
    - Tool definitions and base classes
    - Sync and async tool support
    - Error handling and logging
-   - Future: ToolKit support
+   - Mirascope toolkit pattern:
+     - BaseToolKit implementation [DONE]
+     - Dynamic docstring templating [DONE]
+     - Self attribute injection [DONE]
+     - Proper async/await support [DONE]
+     - OpenPipe integration [DONE]
+     - Toolkit test patterns [DONE]
 
 3. runtime.py:
    - Environment management
@@ -89,20 +199,32 @@
    - Improve context management
    - Integrate with ContextSuppliers
    - Integrate with Evaluators
+   - Add checkpointing for long-running workflows
+   - Implement error recovery mechanisms
 
-2. Agent Components:
+2. Newsletter System Enhancements:
+   - Implement parallel channel processing
+   - Add state persistence
+   - Integrate checkpointing
+   - Add error recovery
+   - Improve template management
+   - Enhance link processing
+   - Add content categorization
+
+3. Agent Components:
    - Implement ContextSuppliers
    - Build Evaluator framework
    - Design ToolKit system
    - Integrate Memory system
 
-3. Testing:
+4. Testing:
    - Graph workflow tests
    - ContextSupplier tests
    - Evaluator tests
    - Integration tests
+   - Mock service responses for Discord tests
 
-4. Documentation:
+5. Documentation:
    - Architecture overview
    - Component interaction guides
    - Extension development
@@ -120,17 +242,79 @@
    - Finish core node types
    - Add state persistence
    - Implement parallel execution
+   - Add checkpointing
+   - Improve error handling
 
-2. Build Agent Components:
+2. Enhance Newsletter Workflow:
+   - Multi-channel support
+   - State persistence
+   - Error recovery
+   - Template management
+   - Content processing
+
+3. Build Agent Components:
    - ContextSuppliers first
    - Evaluators second
    - Memory integration third
    - ToolKit system fourth
 
-3. Platform Extensions:
-   - Stabilize Discord
+4. Platform Extensions:
+   - Stabilize Discord [DONE]
    - Plan Twitter integration
    - Plan LinkedIn integration
+
+## Current Debugging Notes
+
+### Newsletter Workflow Investigation
+1. Content Formatting Issues:
+   - DiscordTools provides well-structured content with proper embed handling
+   - Need to verify content structure preservation between nodes
+   - Investigate potential data transformation issues in AnalysisNode
+   - Review content grouping logic in newsletter workflow
+
+2. Prompt Formatting:
+   - Current implementation bypasses prompt template decorators
+   - Should leverage alchemist.ai.prompts for consistent formatting
+   - Need to implement proper prompt templates for analysis
+   - Consider migrating to structured prompt system
+
+3. State Management:
+   - Potential issues with state persistence between nodes
+   - Need to verify state structure after collect phase
+   - Investigate state validation in node transitions
+   - Add state debugging capabilities
+
+### Next Actions
+1. Create simplified graph example:
+   - Implement basic collect -> analyze -> format flow
+   - Use minimal content structure
+   - Add comprehensive logging
+   - Focus on state transitions
+   - Validate prompt formatting
+
+2. Enhance Debugging:
+   - Add state inspection logging
+   - Implement prompt validation
+   - Add content structure verification
+   - Track node transition states
+
+3. Testing Strategy:
+   - Create unit tests for content formatting
+   - Validate prompt template system
+   - Test state management
+   - Add integration tests for node transitions
+
+### Known Working Components
+- Discord content collection (verified)
+- Basic node transitions
+- Content grouping logic
+- Link extraction
+
+### Areas Needing Investigation
+- LLM call execution in AnalysisNode
+- State structure preservation
+- Prompt template integration
+- Error handling in node transitions
 
 ## Notes
 - Keep provider-agnostic design
@@ -267,16 +451,13 @@
    - Advanced error handling
    - Performance optimizations
 
-Development Notes and Roadmap
-==========================
+## Development Notes and Roadmap
 
-Current Status
--------------
-
+### Current Status
 1. Core Agent System
-   - Base implementation complete and functional
-   - OpenPipe integration working
-   - Tool system tested and working
+   - Base implementation complete and functional [DONE]
+   - OpenPipe integration working [DONE]
+   - Tool system tested and working [DONE]
 
 2. Graph System
    - Core framework implemented with NodeContext, NodeState, Node, and Graph classes
@@ -291,41 +472,27 @@ Current Status
    - Basic logging and debugging in place
 
 3. Extensions
-   - DiscordReaderTool implemented and functional
-   - Channel mapping and lookback functionality working
+   - DiscordTools implemented and functional [DONE]
+   - Channel mapping and lookback functionality working [DONE]
+   - Embed handling and filtering complete [DONE]
 
-Next Steps
-----------
-
+### Next Steps
 1. Graph Framework Enhancements
-   - Improve state visibility and debugging:
-     * Add detailed state inspection methods
-     * Enhance logging for state transitions
-     * Add visualization tools for graph execution
-   
-   - Strengthen error handling:
-     * Add error recovery mechanisms
-     * Implement retry logic for transient failures
-     * Add validation for node configurations
-   
-   - Add validation:
-     * Input/output validation for nodes
-     * Graph structure validation
-     * State consistency checks
+   - Improve state visibility and debugging
+   - Strengthen error handling
+   - Add validation
 
 2. Testing and Documentation
    - Add more example workflows
-   - Create comprehensive test suite
+   - Complete mock service responses
    - Document graph patterns and best practices
-   - Add API documentation
 
 3. Tools Integration
    - Integrate more AI tools
    - Add tool validation framework
    - Create tool discovery mechanism
 
-Backlog
--------
+### Backlog
 - Memory system implementation
 - Context supplier framework
 - Evaluator system
@@ -336,13 +503,12 @@ Backlog
 - State persistence
 - Parallel execution support
 
-Completed
----------
+### Completed
 ✓ Base agent implementation
 ✓ OpenPipe integration
 ✓ Tool system foundation
-✓ Graph system core
-✓ Basic workflow testing
-✓ Discord reader tool
-✓ Terminal node handling
-✓ State management between nodes
+✓ Discord toolkit implementation
+✓ Embed handling and filtering
+✓ Functional testing framework
+✓ Error case handling
+✓ Channel configuration system
