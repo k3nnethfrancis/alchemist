@@ -22,7 +22,8 @@ from alchemist.ai.base.logging import (
     LogComponent,
     LogLevel,
     LogFormat,
-    get_logger
+    get_logger,
+    log_state
 )
 
 # Set up logging
@@ -32,16 +33,20 @@ log_dir.mkdir(parents=True, exist_ok=True)
 configure_logging(
     default_level=LogLevel.INFO,
     component_levels={
-        LogComponent.AGENT: LogLevel.INFO,
-        LogComponent.GRAPH: LogLevel.INFO,
-        LogComponent.WORKFLOW: LogLevel.INFO
+        LogComponent.AGENT: LogLevel.DEBUG,
+        LogComponent.GRAPH: LogLevel.DEBUG,
+        LogComponent.NODES: LogLevel.DEBUG,
+        LogComponent.WORKFLOW: LogLevel.DEBUG
     },
-    format_string=LogFormat.DEFAULT,
+    format_string=LogFormat.DEBUG,
     log_file=str(log_dir / f"persona_chat_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log"),
     enable_json=True
 )
 
-logger = get_logger(LogComponent.AGENT)
+# Get component loggers
+workflow_logger = get_logger(LogComponent.WORKFLOW)
+graph_logger = get_logger(LogComponent.GRAPH)
+node_logger = get_logger(LogComponent.NODES)
 
 @prompt_template()
 def reflection_prompt(messages: List[Messages.Type], **kwargs) -> Messages.Type:
@@ -87,7 +92,12 @@ class ReflectionNode(LLMNode):
             # Get messages from state
             messages = state.results.get("messages", [])
             if not messages:
+                node_logger.warning("No messages found in state")
                 return self.next_nodes.get("default")
+                
+            # Log state before reflection
+            node_logger.debug("State before reflection:")
+            log_state(node_logger, state.dict())
                 
             # Generate reflection using LLM
             reflection = await self._agent._step(
@@ -96,13 +106,17 @@ class ReflectionNode(LLMNode):
             
             # Add reflection to state
             state.results["reflection"] = reflection
-            logger.info("Generated reflection for conversation")
-            logger.debug(f"Reflection content: {reflection}")
+            node_logger.info(f"Generated reflection for conversation: {self.id}")
+            node_logger.debug(f"Reflection content: {reflection}")
+            
+            # Log updated state
+            node_logger.debug("State after reflection:")
+            log_state(node_logger, state.dict())
             
             return self.next_nodes.get("default")
             
         except Exception as e:
-            logger.error(f"Error in reflection node: {str(e)}")
+            node_logger.error(f"Error in reflection node {self.id}: {str(e)}", exc_info=True)
             state.results["reflection_error"] = str(e)
             return self.next_nodes.get("error")
 
@@ -125,22 +139,31 @@ class AgentNode(LLMNode):
             messages = state.results.get("messages", [])
             reflection = state.results.get("reflection")
             
+            # Log input state
+            node_logger.debug("Agent node input state:")
+            log_state(node_logger, {"messages": messages, "reflection": reflection})
+            
             if reflection:
                 # Add reflection as system message
                 messages = [Messages.System(reflection)] + messages
+                node_logger.debug("Added reflection to messages")
             
             # Get agent response
             response = await self.agent._step(messages)
             
             # Store response
             state.results["response"] = response
-            logger.info("Generated agent response")
-            logger.debug(f"Response content: {response}")
+            node_logger.info(f"Generated agent response: {self.id}")
+            node_logger.debug(f"Response content: {response}")
+            
+            # Log final state
+            node_logger.debug("Agent node final state:")
+            log_state(node_logger, state.dict())
             
             return self.next_nodes.get("default")
             
         except Exception as e:
-            logger.error(f"Error in agent node: {str(e)}")
+            node_logger.error(f"Error in agent node {self.id}: {str(e)}", exc_info=True)
             state.results["agent_error"] = str(e)
             return self.next_nodes.get("error")
 
@@ -157,7 +180,8 @@ async def main():
         tools=[]
     )
     agent = BaseAgent(runtime_config=config.model_dump())
-    logger.info("Initialized agent with configuration")
+    workflow_logger.info("Initialized agent with configuration")
+    workflow_logger.debug(f"Agent config: {config.model_dump()}")
     
     # Create nodes
     reflection = ReflectionNode(
@@ -177,7 +201,7 @@ async def main():
     graph.add_node(reflection)
     graph.add_node(agent_node)
     graph.add_entry_point("start", "reflect")
-    logger.info("Graph configured with reflection and agent nodes")
+    workflow_logger.info("Graph configured with reflection and agent nodes")
     
     # Create state
     state = NodeState()
@@ -189,16 +213,18 @@ async def main():
             # Get user input
             user_input = input("\nYou: ")
             if user_input.lower() in ["exit", "quit"]:
-                logger.info("Chat session ended by user")
+                workflow_logger.info("Chat session ended by user")
                 break
                 
             # Add message to history
             history.append(Messages.User(user_input))
+            workflow_logger.debug(f"Added user message to history: {user_input}")
             
             # Update state
             state.results["messages"] = history
             
             # Process through graph
+            workflow_logger.info("Processing user input through graph")
             state = await graph.run("start", state)
             
             # Get response and update history
@@ -206,17 +232,18 @@ async def main():
             if response:
                 history.append(Messages.Assistant(response))
                 print(f"\nAgent: {response}")
+                workflow_logger.debug(f"Added agent response to history: {response}")
             
         except KeyboardInterrupt:
-            logger.info("Chat session terminated by user interrupt")
+            workflow_logger.info("Chat session terminated by user interrupt")
             break
         except Exception as e:
-            logger.error(f"Error in chat loop: {str(e)}")
+            workflow_logger.error(f"Error in chat loop: {str(e)}", exc_info=True)
             break
 
 if __name__ == "__main__":
     try:
         asyncio.run(main())
     except Exception as e:
-        logger.error(f"Fatal error in main: {str(e)}")
+        workflow_logger.error(f"Fatal error in main: {str(e)}", exc_info=True)
         raise 

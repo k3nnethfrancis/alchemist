@@ -1,159 +1,96 @@
-"""Example of a reflective chatbot using graph nodes with AUG_E persona."""
+"""
+A simple reflective chatbot using the Graph framework.
 
-from typing import Dict, Any, Optional
-from alchemist.ai.graph.base import Graph, NodeState, NodeContext
-from alchemist.ai.graph.nodes.base import LLMNode
-from alchemist.ai.base.agent import BaseAgent
-from alchemist.ai.prompts.persona import AUG_E
+This example demonstrates how to:
+1. Create a graph with two nodes (thinking and response)
+2. Use LLM nodes for reflection and response generation
+3. Run an interactive chat loop with the workflow
+"""
+
+import asyncio
+from pathlib import Path
+from alchemist.ai.graph.base import Graph, NodeState
+from alchemist.ai.graph.nodes.base.llm import LLMNode
 from alchemist.ai.base.logging import configure_logging, LogComponent, LogLevel
-import logging
-import time
-from datetime import datetime
 
-# Configure logging - debug for graph, info for others
-configure_logging(
-    default_level=LogLevel.INFO,
-    component_levels={
-        LogComponent.GRAPH: LogLevel.DEBUG,
-        LogComponent.NODES: LogLevel.DEBUG
-    }
-)
+# Set up basic logging
+log_dir = Path("logs/reflection_workflow")
+log_dir.mkdir(parents=True, exist_ok=True)
+configure_logging(log_file=str(log_dir / "reflection.log"))
 
-# Get module logger
-logger = logging.getLogger(__name__)
-
-class ThinkingNode(LLMNode):
-    """Node that performs step-by-step thinking."""
+class ReflectionWorkflow:
+    """A simple workflow that reflects on user input and generates thoughtful responses."""
     
-    async def process(self, state: NodeState) -> Optional[str]:
-        """Process thinking steps."""
-        try:
-            start_time = datetime.now()
-            print("\nThinking...\n", flush=True)
-            
-            # Initialize step tracking if not present
-            if "step_number" not in state.data:
-                state.data["step_number"] = 1
-                state.data["previous_steps"] = ""
-            
-            # Get response from LLM
-            response = await self.agent.get_response(self.format_prompt(state))
-            
-            # Store response in results
-            state.results[self.id] = {"response": response}
-            
-            # Update step tracking
-            state.data["previous_steps"] += f"\nStep {state.data['step_number']}:\n{response}\n"
-            state.data["step_number"] += 1
-            
-            # Log timing
-            end_time = datetime.now()
-            thinking_time = (end_time - start_time).total_seconds()
-            print(f"[Step {state.data['step_number']-1} thinking time: {thinking_time:.2f} seconds]\n", flush=True)
-            
-            # Decide next node
-            if "NEXT: final_answer" in response or state.data["step_number"] > 5:
-                return "respond"
-            return "think"
-            
-        except Exception as e:
-            logger.error(f"Error in thinking node: {str(e)}")
-            state.results[self.id] = {"error": str(e)}
-            return "respond"  # Fallback to respond on error
-
-    def format_prompt(self, state: NodeState) -> str:
-        """Format the prompt with state data."""
-        return f"""TITLE: Step-by-step Analysis
-
-        User Message: {state.results.get('input', {}).get('message', '')}
-        Previous Steps: {state.data.get('previous_steps', '')}
-        Current Step: {state.data.get('step_number', 1)}
+    def __init__(self):
+        self.graph = self._create_graph()
+    
+    def _create_graph(self) -> Graph:
+        """Create a two-node graph for reflection and response."""
+        graph = Graph()
         
-        Provide your response in this format:
-        TITLE: [title of the step]
-        CONTENT: [your detailed reasoning]
-        NEXT: [either "continue" or "final_answer"]
+        # First node: Think deeply about the user's input
+        think_node = LLMNode(
+            id="think",
+            prompt="""Reflect deeply on this input, considering:
+            - The underlying meaning or intent
+            - Any assumptions or implications
+            - Potential areas for exploration
+            
+            User input: {message}""",
+            next_nodes={"default": "respond"}
+        )
         
-        Guidelines:
-        - Use AT MOST 5 steps
-        - Be aware of your limitations
-        - Consider alternative perspectives
-        - Test assumptions thoroughly
-        - Be willing to be wrong and re-examine"""
-
-async def create_reflection_workflow() -> Graph:
-    """Create a reflective chatbot workflow."""
-    logger.info("Creating reflection workflow...")
-    
-    # Create agent with AUG_E persona
-    agent = BaseAgent(provider="openpipe", persona=AUG_E)
-    
-    think = ThinkingNode(
-        id="think",
-        agent=agent,
-        next_nodes={"think": "think", "respond": "respond"}
-    )
-    
-    respond = LLMNode(
-        id="respond",
-        agent=agent,
-        prompt="""Based on this step-by-step analysis:
-
-        Previous Analysis: {think[response]}
+        # Second node: Generate a friendly, insightful response
+        respond_node = LLMNode(
+            id="respond",
+            prompt="""Based on our reflection, craft a friendly and insightful response.
+            Make it conversational but meaningful.
+            
+            Our reflection: {think_result}""",
+            next_nodes={"default": None}  # End of workflow
+        )
         
-        Provide a clear, final response that:
-        1. Addresses the core question/intent
-        2. Incorporates key insights from the analysis
-        3. Maintains AUG_E's personality and style
+        # Add nodes and entry point
+        graph.add_node(think_node)
+        graph.add_node(respond_node)
+        graph.add_entry_point("start", "think")
         
-        Remember to keep it casual and friendly for simple greetings!""",
-        next_nodes={"default": None}
-    )
+        return graph
     
-    # Create and validate graph
-    graph = Graph()
-    graph.add_node(think)
-    graph.add_node(respond)
-    
-    # Add entry point
-    graph.add_entry_point("main", "think")
-    
-    return graph
-
-async def run_chatbot():
-    """Run the reflective chatbot."""
-    logger.info("Starting reflective chatbot...")
-    
-    graph = await create_reflection_workflow()
-    
-    print("\nReflective Chatbot: yo fam! i'm here to help ya think things through. what's on your mind? 🤔")
-    
-    while True:
-        try:
-            user_input = input("\nYou: ").strip()
-            if user_input.lower() in ["exit", "quit", "bye"]:
-                print("\nReflective Chatbot: peace out! stay curious! ✌️")
-                break
+    async def chat(self):
+        """Run an interactive chat session."""
+        print("\nReflective Bot: Hi! I'm here to help you reflect. Type 'exit' to quit.")
+        
+        while True:
+            try:
+                # Get user input
+                user_input = input("\nYou: ").strip()
+                if user_input.lower() in ["exit", "quit", "bye"]:
+                    print("\nReflective Bot: Goodbye! Take care!")
+                    break
                 
-            state = NodeState(
-                context=NodeContext(),
-                results={"input": {"message": user_input}},
-                data={}  # ThinkingNode will initialize step tracking
-            )
-            
-            final_state = await graph.run("main", state)
-            
-            response = final_state.results.get('respond', {}).get('response', 
-                "hmm, let me think about that some more...")
-            print(f"\nReflective Chatbot: {response}")
-            
-        except KeyboardInterrupt:
-            print("\nReflective Chatbot: catch ya later! ✌️")
-            break
-        except Exception as e:
-            logger.error(f"Error: {str(e)}")
-            print("\nReflective Chatbot: oops, my brain glitched! can you try that again? 😅")
+                # Prepare state with user's message
+                state = NodeState()
+                state.data["message"] = user_input
+                
+                # Run the reflection workflow
+                final_state = await self.graph.run("start", state)
+                
+                # Get the response from the final node
+                response = final_state.results.get("respond", {}).get("response", 
+                    "I need a moment to reflect on that.")
+                print(f"\nReflective Bot: {response}")
+                
+            except KeyboardInterrupt:
+                print("\nReflective Bot: Session ended. Take care!")
+                break
+            except Exception as e:
+                print(f"\nReflective Bot: I encountered an error: {str(e)}")
+
+def main():
+    """Run the reflection workflow."""
+    workflow = ReflectionWorkflow()
+    asyncio.run(workflow.chat())
 
 if __name__ == "__main__":
-    import asyncio
-    asyncio.run(run_chatbot())
+    main()

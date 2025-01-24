@@ -1,92 +1,107 @@
-"""LLM foundation node type."""
+"""LLM node for graph-based workflows."""
 
-import os
-import sys
 import asyncio
-from typing import Any, Dict, List, Optional, Union
-from pydantic import Field, BaseModel
-
-# Add parent directories to path if running directly
-if __name__ == "__main__" and __package__ is None:
-    file = os.path.abspath(__file__)
-    parent = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(file)))))
-    sys.path.insert(0, parent)
+from typing import Dict, Any, Optional, Union, List
+from pydantic import Field
 
 from alchemist.ai.base.agent import BaseAgent
-from alchemist.ai.graph.base import Node, NodeState
+from alchemist.ai.base.logging import get_logger, LogComponent
+from alchemist.ai.graph.nodes.base.node import Node, NodeState
 from mirascope.core import BaseMessageParam, Messages, prompt_template
 
-class MockAgent(BaseModel):
-    """Mock agent for testing."""
-    async def get_response(self, messages: List[BaseMessageParam]) -> str:
-        """Return a mock response."""
-        return f"Mock response to: {messages[-1].content}"
+# Get logger for node operations
+logger = get_logger(LogComponent.NODES)
 
 class LLMNode(Node):
-    """Base class for nodes that use LLM capabilities.
-    
-    This node type adds LLM-specific functionality on top of the base Node class.
-    It handles prompt formatting and LLM interaction through the BaseAgent.
+    """
+    Node that processes input through an LLM agent.
     
     Attributes:
-        runtime_config: Configuration for the LLM runtime
-        prompt_template: Mirascope prompt template function for generating LLM prompts
-        system_prompt: Optional system prompt to use for all messages
+        prompt_template: Template function for generating prompts
+        prompt: Optional raw prompt string (used if no template)
+        system_prompt: Optional system prompt for the agent
+        agent: Optional agent instance (created if not provided)
+        runtime_config: Optional runtime configuration
     """
     
-    runtime_config: Optional[Any] = None
-    prompt_template: Any = None  # Will hold the prompt template function
+    prompt_template: Optional[Any] = None  # Function decorated with @prompt_template
+    prompt: Optional[str] = None
     system_prompt: Optional[str] = None
+    agent: Optional[BaseAgent] = None
+    runtime_config: Dict[str, Any] = Field(default_factory=dict)
     
     async def process(self, state: NodeState) -> Optional[str]:
-        """Process node using LLM.
+        """
+        Process state through LLM and store response.
         
         Args:
-            state: Current node state containing results and context
+            state: Current node state
             
         Returns:
-            ID of next node to execute or None if finished
-            
-        The node will:
-        1. Format prompt using Mirascope template and state results
-        2. Send the messages to the LLM agent
-        3. Store the response in results
-        4. Return the next node ID based on default path
+            str: Next node ID
         """
         try:
-            # Get prompt template result
-            template_result = self.prompt_template(**state.results)
+            # Get or create agent
+            agent = self.agent or BaseAgent(
+                system_prompt=self.system_prompt,
+                **self.runtime_config
+            )
             
-            # Handle dynamic config case
-            if isinstance(template_result, dict):
-                messages = template_result.get("messages", [])
-                computed_fields = template_result.get("computed_fields", {})
-                state.results.update(computed_fields)
+            # Get prompt using template or raw string
+            if self.prompt_template:
+                # Extract data for template
+                template_data = {}
+                template_data.update(state.data)
+                for node_id, result in state.results.items():
+                    if isinstance(result, dict):
+                        template_data.update(result)
+                    else:
+                        template_data[f"{node_id}_result"] = result
+                
+                # Generate messages using template
+                messages = self.prompt_template(**template_data)
+                response = await agent.get_response(messages)
             else:
-                messages = template_result
-            
-            # Add system prompt if specified
-            if self.system_prompt:
-                messages = [Messages.System(self.system_prompt)] + messages
-            
-            # Create agent if needed
-            if not hasattr(self, "_agent"):
-                self._agent = BaseAgent(runtime_config=self.runtime_config)
-            
-            # Get LLM response
-            response = await self._agent._step(messages)
+                # Use raw prompt string
+                formatted_prompt = self._format_prompt(state)
+                response = await agent.get_response(formatted_prompt)
             
             # Store result
-            state.results[self.id] = {
-                "response": response,
-                "messages": messages
-            }
+            state.results[self.id] = {"response": response}
             
-            return self.next_nodes.get("default")
+            return self.get_next_node()
             
         except Exception as e:
-            state.results[self.id] = {"error": str(e)}
-            return self.next_nodes.get("error")
+            logger.error(f"Error in LLM node {self.id}: {str(e)}")
+            state.errors[self.id] = str(e)
+            return self.get_next_node("error")
+    
+    def _format_prompt(self, state: NodeState) -> str:
+        """Format prompt template with state data."""
+        try:
+            # Get data from state results or data
+            format_data = {}
+            format_data.update(state.data)
+            
+            # Add results from previous nodes
+            for node_id, result in state.results.items():
+                if isinstance(result, dict):
+                    format_data.update(result)
+                else:
+                    format_data[f"{node_id}_result"] = result
+            
+            return self.prompt.format(**format_data)
+            
+        except KeyError as e:
+            raise ValueError(f"Missing required prompt variable: {str(e)}")
+        except Exception as e:
+            raise ValueError(f"Error formatting prompt: {str(e)}")
+            
+    def validate(self) -> bool:
+        """Validate node configuration."""
+        if not (self.prompt or self.prompt_template):
+            return False
+        return super().validate()
 
 async def test_llm_node():
     """Test LLM node functionality."""

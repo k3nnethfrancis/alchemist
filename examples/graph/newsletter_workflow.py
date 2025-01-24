@@ -23,6 +23,7 @@ from alchemist.ai.prompts.persona import KEN_E
 from alchemist.ai.tools import DiscordTools
 from alchemist.ai.base.runtime import RuntimeConfig
 from alchemist.ai.prompts.base import PersonaConfig
+from alchemist.ai.graph.state import NodeState as NewNodeState
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -906,7 +907,7 @@ async def main(additional_context: str = ""):
         
         # Initialize state
         start_time = datetime.now()
-        state = NodeState(
+        state = NewNodeState(
             context=NodeContext(
                 metadata={"start_time": start_time.isoformat()}
             )
@@ -914,7 +915,7 @@ async def main(additional_context: str = ""):
         
         # Run workflow
         logger.info("⚙️ Running workflow...")
-        final_state = await workflow.run("start", state)
+        final_state = await workflow.run("start", state=state)
         
         # Check workflow completion
         if not final_state:
