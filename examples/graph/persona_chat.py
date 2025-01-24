@@ -5,9 +5,9 @@ enhancement to a base agent's chat functionality.
 """
 
 import asyncio
-import logging
 from typing import Optional, List
 from pathlib import Path
+from datetime import datetime
 from dotenv import load_dotenv
 
 from mirascope.core import Messages, prompt_template
@@ -17,10 +17,31 @@ from alchemist.ai.base.agent import BaseAgent
 from alchemist.ai.graph.base import Graph, NodeContext, NodeState
 from alchemist.ai.graph.nodes.base import LLMNode
 from alchemist.ai.prompts.persona import ALCHEMIST
+from alchemist.ai.base.logging import (
+    configure_logging,
+    LogComponent,
+    LogLevel,
+    LogFormat,
+    get_logger
+)
 
 # Set up logging
-logging.basicConfig(level=logging.INFO, format='%(message)s')
-logger = logging.getLogger(__name__)
+log_dir = Path("logs/persona_chat")
+log_dir.mkdir(parents=True, exist_ok=True)
+
+configure_logging(
+    default_level=LogLevel.INFO,
+    component_levels={
+        LogComponent.AGENT: LogLevel.INFO,
+        LogComponent.GRAPH: LogLevel.INFO,
+        LogComponent.WORKFLOW: LogLevel.INFO
+    },
+    format_string=LogFormat.DEFAULT,
+    log_file=str(log_dir / f"persona_chat_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log"),
+    enable_json=True
+)
+
+logger = get_logger(LogComponent.AGENT)
 
 @prompt_template()
 def reflection_prompt(messages: List[Messages.Type], **kwargs) -> Messages.Type:
@@ -75,12 +96,13 @@ class ReflectionNode(LLMNode):
             
             # Add reflection to state
             state.results["reflection"] = reflection
-            logger.info(f"\nReflection: {reflection}\n")
+            logger.info("Generated reflection for conversation")
+            logger.debug(f"Reflection content: {reflection}")
             
             return self.next_nodes.get("default")
             
         except Exception as e:
-            logger.error(f"Error in reflection: {str(e)}")
+            logger.error(f"Error in reflection node: {str(e)}")
             state.results["reflection_error"] = str(e)
             return self.next_nodes.get("error")
 
@@ -112,12 +134,13 @@ class AgentNode(LLMNode):
             
             # Store response
             state.results["response"] = response
-            logger.info(f"Agent: {response}")
+            logger.info("Generated agent response")
+            logger.debug(f"Response content: {response}")
             
             return self.next_nodes.get("default")
             
         except Exception as e:
-            logger.error(f"Error in agent: {str(e)}")
+            logger.error(f"Error in agent node: {str(e)}")
             state.results["agent_error"] = str(e)
             return self.next_nodes.get("error")
 
@@ -134,6 +157,7 @@ async def main():
         tools=[]
     )
     agent = BaseAgent(runtime_config=config.model_dump())
+    logger.info("Initialized agent with configuration")
     
     # Create nodes
     reflection = ReflectionNode(
@@ -153,6 +177,7 @@ async def main():
     graph.add_node(reflection)
     graph.add_node(agent_node)
     graph.add_entry_point("start", "reflect")
+    logger.info("Graph configured with reflection and agent nodes")
     
     # Create state
     state = NodeState()
@@ -164,6 +189,7 @@ async def main():
             # Get user input
             user_input = input("\nYou: ")
             if user_input.lower() in ["exit", "quit"]:
+                logger.info("Chat session ended by user")
                 break
                 
             # Add message to history
@@ -179,17 +205,18 @@ async def main():
             response = state.results.get("response")
             if response:
                 history.append(Messages.Assistant(response))
+                print(f"\nAgent: {response}")
             
         except KeyboardInterrupt:
-            print("\nChat session terminated by user.")
+            logger.info("Chat session terminated by user interrupt")
             break
         except Exception as e:
-            logger.error(f"Error in chat loop: {e}")
+            logger.error(f"Error in chat loop: {str(e)}")
             break
 
 if __name__ == "__main__":
     try:
         asyncio.run(main())
     except Exception as e:
-        logger.error(f"Error in main: {e}")
+        logger.error(f"Fatal error in main: {str(e)}")
         raise 
