@@ -5,12 +5,21 @@ from alchemist.ai.graph.base import Graph, NodeState, NodeContext
 from alchemist.ai.graph.nodes.base import LLMNode
 from alchemist.ai.base.agent import BaseAgent
 from alchemist.ai.prompts.persona import AUG_E
+from alchemist.ai.base.logging import configure_logging, LogComponent, LogLevel
 import logging
 import time
 from datetime import datetime
 
-# Set up logging
-logging.basicConfig(level=logging.INFO)
+# Configure logging - debug for graph, info for others
+configure_logging(
+    default_level=LogLevel.INFO,
+    component_levels={
+        LogComponent.GRAPH: LogLevel.DEBUG,
+        LogComponent.NODES: LogLevel.DEBUG
+    }
+)
+
+# Get module logger
 logger = logging.getLogger(__name__)
 
 class ThinkingNode(LLMNode):
