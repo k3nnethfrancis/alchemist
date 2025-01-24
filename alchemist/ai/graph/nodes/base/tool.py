@@ -18,7 +18,7 @@ if __name__ == "__main__" and __package__ is None:
     sys.path.insert(0, parent)
 
 from alchemist.ai.graph.base import Node, NodeState
-from alchemist.ai.base.tools import BaseTool
+from mirascope.core import BaseTool
 
 # Configure logging
 logger = logging.getLogger(__name__)

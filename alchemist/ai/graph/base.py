@@ -14,7 +14,10 @@ from datetime import datetime
 from enum import Enum
 import json
 
-logger = logging.getLogger(__name__)
+from alchemist.ai.base.logging import LogComponent
+
+# Get logger for graph component
+logger = logging.getLogger(LogComponent.GRAPH.value)
 
 class NodeStatus(str, Enum):
     """Node execution status."""
@@ -74,6 +77,7 @@ class NodeState(BaseModel):
         data: Temporary data for current execution
         status: Status of each node's execution
         parallel_tasks: Set of nodes running in parallel
+        errors: Dictionary of error messages by node ID
     """
     
     context: NodeContext = Field(default_factory=NodeContext)
@@ -81,6 +85,7 @@ class NodeState(BaseModel):
     data: Dict[str, Any] = Field(default_factory=dict)
     status: Dict[str, NodeStatus] = Field(default_factory=dict)
     parallel_tasks: Set[str] = Field(default_factory=set)
+    errors: Dict[str, str] = Field(default_factory=dict)
 
     def mark_status(self, node_id: str, status: NodeStatus):
         """Update node execution status."""

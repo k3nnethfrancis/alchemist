@@ -11,8 +11,10 @@ import asyncio
 
 from alchemist.core.logger import log_step, log_run
 from alchemist.ai.prompts.base import PersonaConfig
+from alchemist.ai.base.logging import LogComponent
 
-logger = logging.getLogger(__name__)
+# Get logger for runtime component
+logger = logging.getLogger(LogComponent.RUNTIME.value)
 
 class Session(BaseModel):
     """Tracks runtime session data."""
@@ -94,7 +96,7 @@ class LocalRuntime(BaseChatRuntime):
     async def start(self) -> None:
         """Start a local chat session."""
         self._start_session("local")
-        print("\nStarting chat session. Type 'exit' or 'quit' to stop.")
+        logger.info("Starting chat session. Type 'exit' or 'quit' to stop.")
         
         while True:
             try:
@@ -106,13 +108,14 @@ class LocalRuntime(BaseChatRuntime):
                 print(f"\nAssistant: {response}")
                 
             except KeyboardInterrupt:
+                logger.info("Chat session interrupted by user.")
                 break
             except Exception as e:
                 logger.error(f"Error in chat loop: {e}")
                 print(f"\n[Error] {str(e)}")
         
         await self.stop()
-        print("\nChat session ended. Goodbye! ✨")
+        logger.info("Chat session ended. Goodbye! ✨")
     
     async def stop(self) -> None:
         """Stop the local runtime."""

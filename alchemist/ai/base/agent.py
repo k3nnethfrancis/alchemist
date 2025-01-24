@@ -45,8 +45,10 @@ from openpipe import OpenAI as OpenPipeClient
 from alchemist.ai.prompts.base import create_system_prompt, PersonaConfig
 from alchemist.ai.prompts.persona import BASE_ASSISTANT
 from alchemist.ai.tools.calculator import CalculatorTool
+from alchemist.ai.base.logging import LogComponent
 
-logger = logging.getLogger(__name__)
+# Get logger for agent component
+logger = logging.getLogger(LogComponent.AGENT.value)
 
 class BaseAgent(BaseModel):
     """Base agent class implementing core agent functionality with persona support and tools.
@@ -182,19 +184,22 @@ class BaseAgent(BaseModel):
 # Main execution block for direct script usage
 if __name__ == "__main__":
     import asyncio
+    from alchemist.ai.base.logging import configure_logging, LogLevel
     
     async def main():
         """Run the agent."""
-        logging.basicConfig(
-            level=logging.INFO,
-            format='%(message)s'
+        configure_logging(
+            default_level=LogLevel.INFO,
+            component_levels={
+                LogComponent.AGENT: LogLevel.DEBUG
+            }
         )
         
-        agent = BaseAgent(tools=[CalculatorTool])  # Pass tool class, not instance
+        agent = BaseAgent(tools=[CalculatorTool])
         
-        print("\nInitialized agent with gpt-4o-mini")
-        print("Type 'exit' or 'quit' to end the conversation")
-        print("-" * 50)
+        logger.info("\nInitialized agent with gpt-4o-mini")
+        logger.info("Type 'exit' or 'quit' to end the conversation")
+        logger.info("-" * 50)
         
         await agent.run()
     
