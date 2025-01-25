@@ -1,13 +1,27 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "alchemist"
+version = "0.1.0"
+description = "AI agent orchestration library"
+requires-python = ">=3.8"
+dependencies = [
+    "pydantic>=2.0.0",
+    "pytest>=7.0.0",
+    "pytest-asyncio>=0.21.0",
+    "mirascope>=0.1.0",
+    "typing-extensions>=4.0.0"
+]
+
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
-testpaths = ["tests"]
-python_files = "test_*.py"
+testpaths = ["alchemist/tests"]
+python_files = ["test_*.py"]
 markers = [
-    "asyncio: mark test as async using asyncio",
-    "trio: mark test as async using trio",
+    "asyncio: mark test as async using asyncio"
 ]
-addopts = "--asyncio-mode=auto"
 filterwarnings = [
-    "ignore::DeprecationWarning:discord.*:",
-    "ignore::DeprecationWarning:audioop.*:"
+    "ignore::DeprecationWarning"
 ]

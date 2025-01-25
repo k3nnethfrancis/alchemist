@@ -1,519 +1,264 @@
 # Alchemist Development Notes
 
-## Project Structure
-
-### alchemist/
-├── ai/
-│   ├── agents/                    # [EXAMPLES]
-│   │   ├── eliza/                # Conversation workflow example
-│   │   │   ├── agent.py
-│   │   │   └── workflow.py
-│   │   └── terminal/             # Tool execution patterns
-│   │       ├── persona_agent.py
-│   │       ├── reflection_agent.py
-│   │       ├── session_manager.py
-│   │       ├── terminal_agent.py
-│   │       └── tools/
-│   │           ├── custom_tools.py
-│   │           ├── read_discord_messages.py
-│   │           └── write_discord_message.py
-│   ├── base/                     # [CORE]
-│   │   ├── agent.py             # Provider-agnostic BaseAgent [DONE]
-│   │   └── runtime.py           # Environment management [DONE]
-│   ├── graph/                    # [CORE - IN PROGRESS ~80-85%]
-│   │   ├── base.py              # Core graph framework
-│   │   └── nodes/
-│   │       ├── base/            # Base node implementations
-│   │       │   ├── llm.py       # LLM node base
-│   │       │   ├── testing.py   # Testing utilities
-│   │       │   └── tool.py      # Tool node base
-│   │       ├── actions.py       # Action node implementations
-│   │       ├── context.py       # Context management
-│   │       ├── decisions.py     # Decision node logic
-│   │       └── evaluators.py    # Response evaluation
-│   ├── prompts/                 # [CORE]
-│   │   ├── base.py             # Core prompt templates
-│   │   └── persona.py          # Agent personalities
-│   └── tools/                   # [CORE]
-│       ├── calculator.py        # Basic arithmetic [TESTED]
-│       ├── discord_tool.py      # Discord integration [COMPLETE]
-│       └── image.py            # Image generation [TESTED]
-└── core/
-    ├── extensions/              # Platform integrations
-    │   ├── config.py           # Extension configuration
-    │   └── discord/            # [COMPLETE]
-    │       ├── client.py       # Discord bot client
-    │       └── runtime.py      # Discord-specific runtime
-    └── logger.py               # Centralized logging
-
-### Additional Project Components
-├── config/                     # Configuration files
-│   └── channels.json          # Discord channel config [DONE]
-├── examples/                   # Example implementations
-│   ├── discord/               # Discord bot examples
-│   │   ├── chatbot.py
-│   │   ├── local_discord_reader.py
-│   │   └── run_bot.py
-│   ├── graph/                 # Graph workflow examples
-│   │   ├── analysis_workflow.py
-│   │   ├── discord_workflow.py
-│   │   ├── newsletter_workflow.py
-│   │   ├── reflection_workflow.py
-│   │   └── workflow_test.py
-│   └── local_chatbot.py
-└── tests/                     # Test suite
-    ├── ai/
-    │   ├── base/             # Core agent tests [DONE]
-    │   ├── graph/            # Graph system tests [IN PROGRESS]
-    │   └── tools/            # Tool implementation tests [DONE]
-    └── core/
-        ├── extensions/       # Platform integration tests
-        └── mirascope/        # Mirascope integration tests
-
-## Current Status
-- Tools are properly integrated and functioning:
-  - CalculatorTool: Basic arithmetic operations [TESTED]
-  - ImageGenerationTool: DALL-E 3 integration [TESTED]
-  - DiscordTools: Channel history with embed support [COMPLETE]
-    - Mirascope toolkit pattern implementation [DONE]
-    - Dynamic channel configuration from config file [DONE]
-    - Proper docstring templating with self attributes [DONE]
-    - Supports natural language queries [DONE]
-    - Handles rich embeds and attachments [DONE]
-    - Configurable via bot service [DONE]
-    - Returns structured JSON responses [DONE]
-    - Proper error handling [DONE]
-    - Tested with ai-news channel [DONE]
-    - Async/await implementation with aiohttp [DONE]
-    - Comprehensive functional testing [DONE]
-    - Proper embed handling with None filtering [DONE]
-    - Improved logging configuration [DONE]
-    - Multi-channel support [IN PROGRESS]
-
-- Newsletter Workflow System [IN PROGRESS]:
-  - Base workflow implementation [DONE]
-  - Content collection from Discord [DONE]
-  - Link extraction and processing [DONE]
-  - Template-based generation [DONE]
-  - Markdown formatting [DONE]
-  - File output management [DONE]
-  - Needs:
-    - State persistence for long runs
-    - Parallel processing for channels
-    - Better error recovery
-    - Proper checkpointing
-    - Integration with ContextSuppliers
-
-- Testing Framework:
-  - Functional tests for each tool [DONE]
-  - Async test support [DONE]
-  - Proper logging and verification [DONE]
-  - Mock service responses [IN PROGRESS]
-  - Channel configuration handling [DONE]
-  - Rich embed verification [DONE]
-  - None value validation [DONE]
-  - Error case testing [DONE]
-  - Newsletter workflow tests [PLANNED]
-
-- Discord Extension is complete:
-  - Message processing and tool execution
-  - Runtime integration with local bot service
-  - Channel configuration management
-  - Enhanced embed handling and formatting
-  - Support for service and direct modes
-  - Proper async/await implementation
-
-## Architecture Overview
-1. Core Agent System [DONE]:
-   - BaseAgent implementation with OpenPipe integration
-   - Provider-agnostic design
-   - Tool execution framework
-   - Basic conversation management
-
-2. Graph System [IN PROGRESS ~80-85%]:
-   - Base graph implementation with node state management [DONE]
-   - LLM nodes for content processing [DONE]
-   - Support for complex workflows with decision nodes [DONE]
-   - Parallel execution support [DONE]
-   - Checkpointing system [DONE]
-   - Error handling and logging [DONE]
-   - Graph validation [DONE]
-   - Need: Advanced state persistence for long-running workflows
-   - Need: Performance optimizations for parallel execution
-   - Need: Subgraph support and visualization tools
-
-3. Agent Components [TO BUILD]:
-   - ContextSuppliers (similar to Eliza's Providers):
-     - Time awareness
-     - User relationship tracking
-     - External data integration
-     - Memory injection
-   - Evaluators (Reference/Alignment Systems):
-     - Conversation assessment
-     - Goal tracking
-     - Context awareness
-     - Behavioral alignment
-   - Extensions (Platform Clients):
-     - Discord [DONE]
-     - Twitter [PLANNED]
-     - LinkedIn [PLANNED]
-   - ToolKits (Plugin-like Tool Collections):
-     - Grouped tool functionality [IMPLEMENTED]
-     - Shared context and usage patterns [IMPLEMENTED]
-     - Configurable tool combinations [IMPLEMENTED]
-   - Memory System:
-     - Vector embeddings
-     - Relational storage
-     - Context-aware retrieval
-
-## Core Components
-1. agent.py:
-   - Core agent functionality
-   - Conversation history
-   - Tool execution
-   - Provider-agnostic design
-
-2. tools.py:
-   - Tool definitions and base classes
-   - Sync and async tool support
-   - Error handling and logging
-   - Mirascope toolkit pattern:
-     - BaseToolKit implementation [DONE]
-     - Dynamic docstring templating [DONE]
-     - Self attribute injection [DONE]
-     - Proper async/await support [DONE]
-     - OpenPipe integration [DONE]
-     - Toolkit test patterns [DONE]
-
-3. runtime.py:
-   - Environment management
-   - Session tracking
-   - Platform-specific configurations
-   - Extension integration
-
-4. graph/:
-   - Workflow framework
-   - Node system
-   - State management
-   - Decision trees
-
-## Next Steps
-1. Graph System Completion:
-   - Enhance state persistence
-   - Add parallel execution
-   - Improve context management
-   - Integrate with ContextSuppliers
-   - Integrate with Evaluators
-   - Add checkpointing for long-running workflows
-   - Implement error recovery mechanisms
-
-2. Newsletter System Enhancements:
-   - Implement parallel channel processing
-   - Add state persistence
-   - Integrate checkpointing
-   - Add error recovery
-   - Improve template management
-   - Enhance link processing
-   - Add content categorization
-
-3. Agent Components:
-   - Implement ContextSuppliers
-   - Build Evaluator framework
-   - Design ToolKit system
-   - Integrate Memory system
-
-4. Testing:
-   - Graph workflow tests
-   - ContextSupplier tests
-   - Evaluator tests
-   - Integration tests
-   - Mock service responses for Discord tests
-
-5. Documentation:
-   - Architecture overview
-   - Component interaction guides
-   - Extension development
-   - ToolKit creation
-
-## Dependencies
-- Mirascope: Core agent functionality
-- OpenPipe: LLM integration
-- Discord.py: Discord extension
-- Pydantic: Data validation
-- DALL-E 3: Image generation
-
-## Development Priorities
-1. Complete Graph System:
-   - Add advanced state persistence
-   - Optimize parallel execution
-   - Implement subgraph support
-   - Add visualization tools
-   - Performance monitoring and tuning
-
-2. Enhance Newsletter Workflow:
-   - Multi-channel support
-   - State persistence
-   - Error recovery
-   - Template management
-   - Content processing
-
-3. Build Agent Components:
-   - ContextSuppliers first
-   - Evaluators second
-   - Memory integration third
-   - ToolKit system fourth
-
-4. Platform Extensions:
-   - Stabilize Discord [DONE]
-   - Plan Twitter integration
-   - Plan LinkedIn integration
-
-## Current Debugging Notes
-
-### Newsletter Workflow Investigation
-1. Content Formatting Issues:
-   - DiscordTools provides well-structured content with proper embed handling
-   - Need to verify content structure preservation between nodes
-   - Investigate potential data transformation issues in AnalysisNode
-   - Review content grouping logic in newsletter workflow
-
-2. Prompt Formatting:
-   - Current implementation bypasses prompt template decorators
-   - Should leverage alchemist.ai.prompts for consistent formatting
-   - Need to implement proper prompt templates for analysis
-   - Consider migrating to structured prompt system
-
-3. State Management:
-   - Potential issues with state persistence between nodes
-   - Need to verify state structure after collect phase
-   - Investigate state validation in node transitions
-   - Add state debugging capabilities
-
-### Next Actions
-1. Create simplified graph example:
-   - Implement basic collect -> analyze -> format flow
-   - Use minimal content structure
-   - Add comprehensive logging
-   - Focus on state transitions
-   - Validate prompt formatting
-
-2. Enhance Debugging:
-   - Add state inspection logging
-   - Implement prompt validation
-   - Add content structure verification
-   - Track node transition states
-
-3. Testing Strategy:
-   - Create unit tests for content formatting
-   - Validate prompt template system
-   - Test state management
-   - Add integration tests for node transitions
-
-### Known Working Components
-- Discord content collection (verified)
-- Basic node transitions
-- Content grouping logic
-- Link extraction
-
-### Areas Needing Investigation
-- LLM call execution in AnalysisNode
-- State structure preservation
-- Prompt template integration
-- Error handling in node transitions
-
-## Notes
-- Keep provider-agnostic design
-- Focus on component modularity
-- Plan for easy extension
-- Consider memory integration points
-- Design for scalability
-- Enable easy toolkit creation
-- Support multiple evaluation systems
-
-## Graph Framework Analysis
-
-### Current Implementation
-
-1. base.py (Core Graph Framework):
-   - Basic graph structure with nodes and edges
-   - Simple state management
-   - Sequential execution flow
-   - Basic error handling
-
-2. nodes/base.py (Base Node Types):
-   - Basic Node interface
-   - Simple LLMNode implementation
-   - Basic prompt formatting
-
-3. nodes/decisions.py (Decision Nodes):
-   - Binary and multi-choice decisions
-   - Basic LLM-based decision making
-   - Simple error handling
-
-4. nodes/actions.py (Action Nodes):
-   - Basic ToolNode structure
-   - Mocked tool execution
-
-### Required Changes
-
-1. base.py Enhancements:
-   - Add support for parallel execution paths
-   - Enhance state persistence with memory integration
-   - Add ContextSupplier integration points
-   - Add support for graph visualization
-   - Add state checkpointing and recovery
-   - Add support for subgraphs/nested workflows
-
-2. nodes/base.py Enhancements:
-   - Add ContextAwareNode base class
-   - Add EvaluatedNode for alignment checks
-   - Enhance prompt management with templates
-   - Add memory-aware node base class
-   - Add support for node metadata and configuration
-   - Add node validation hooks
-
-3. nodes/decisions.py Enhancements:
-   - Add support for complex decision criteria
-   - Integrate with Evaluators for decision validation
-   - Add support for decision confidence scores
-   - Add decision caching/memoization
-   - Add support for fallback paths
-   - Add decision explanation capabilities
-
-4. nodes/actions.py Enhancements:
-   - Integrate with actual tool system
-   - Add support for ToolKit integration
-   - Add parallel tool execution
-   - Add tool result validation
-   - Add retry mechanisms
-   - Add tool execution monitoring
-   - Add tool chaining capabilities
-
-### New Components Needed
-
-1. context.py:
-   ```python
-   class ContextSupplier:
-       """Base class for context providers."""
-       async def get_context(self, state: NodeState) -> Dict[str, Any]: ...
-
-   class TimeAwareContext(ContextSupplier):
-       """Provides time-based context."""
-       ...
-
-   class MemoryContext(ContextSupplier):
-       """Provides memory-based context."""
-       ...
-   ```
-
-2. evaluators.py:
-   ```python
-   class Evaluator:
-       """Base class for response evaluation."""
-       async def evaluate(self, state: NodeState, response: Any) -> bool: ...
-
-   class AlignmentEvaluator(Evaluator):
-       """Checks response alignment with goals."""
-       ...
-
-   class SafetyEvaluator(Evaluator):
-       """Checks response safety."""
-       ...
-   ```
-
-3. memory.py:
-   ```python
-   class GraphMemory:
-       """Manages persistent state across executions."""
-       async def store(self, key: str, value: Any): ...
-       async def retrieve(self, key: str) -> Any: ...
-       async def update(self, key: str, value: Any): ...
-   ```
-
-### Implementation Priority
-
-1. Core Enhancements:
-   - Parallel execution support in base.py
-   - Memory integration
-   - Context supplier framework
-   - Tool system integration
-
-2. Node Improvements:
-   - Context-aware base nodes
-   - Enhanced decision nodes
-   - Full tool node implementation
-   - Node validation system
-
-3. New Components:
-   - Context suppliers
-   - Evaluator framework
-   - Memory system
-   - Graph visualization
-
-4. Advanced Features:
-   - Subgraph support
-   - State persistence
-   - Advanced error handling
-   - Performance optimizations
-
-## Development Notes and Roadmap
-
-### Current Status
-1. Core Agent System
-   - Base implementation complete and functional [DONE]
-   - OpenPipe integration working [DONE]
-   - Tool system tested and working [DONE]
-
-2. Graph System
-   - Core framework implemented with NodeContext, NodeState, Node, and Graph classes
-   - Base node types created:
-     * LLMNode: For LLM-based operations
-     * ToolNode: For tool execution
-   - Workflow test implemented and functional:
-     * Content filtering working
-     * Analysis and categorization nodes functional
-     * Terminal node handling implemented
-     * State management between nodes working
-   - Basic logging and debugging in place
-
-3. Extensions
-   - DiscordTools implemented and functional [DONE]
-   - Channel mapping and lookback functionality working [DONE]
-   - Embed handling and filtering complete [DONE]
-
-### Next Steps
-1. Graph Framework Enhancements
-   - Improve state visibility and debugging
-   - Strengthen error handling
-   - Add validation
-
-2. Testing and Documentation
-   - Add more example workflows
-   - Complete mock service responses
-   - Document graph patterns and best practices
-
-3. Tools Integration
-   - Integrate more AI tools
-   - Add tool validation framework
-   - Create tool discovery mechanism
-
-### Backlog
-- Memory system implementation
-- Context supplier framework
-- Evaluator system
-- Character system integration
-- Workflow templating system
-- Graph visualization tools
-- Performance monitoring
-- State persistence
-- Parallel execution support
-
-### Completed
-✓ Base agent implementation
-✓ OpenPipe integration
-✓ Tool system foundation
-✓ Discord toolkit implementation
-✓ Embed handling and filtering
-✓ Functional testing framework
-✓ Error case handling
-✓ Channel configuration system
+This document serves as a living overview for the Alchemist project: an AI agent orchestration library used internally by Agency42. It provides details on the overall system architecture, our project structure, current development status, and future roadmap.
+
+---
+
+## 1. Project Structure
+
+Below is the current layout of the Alchemist repository. It reflects how we organize core AI logic (agents, tools, graph), integration layers (extensions, logging), tests, and example projects.
+
+alchemist/  
+├── alchemist/                      # Main package  
+│   ├── ai/  
+│   │   ├── base/                   # [CORE]  
+│   │   │   ├── agent.py           # Provider-agnostic BaseAgent [DONE]  
+│   │   │   ├── logging.py         # Centralized logging system [DONE]  
+│   │   │   └── runtime.py         # Environment management [DONE]  
+│   │   ├── graph/                  # [CORE - IN PROGRESS ~85%]  
+│   │   │   ├── base.py            # Core graph framework and orchestration  
+│   │   │   ├── state.py           # State and context management  
+│   │   │   ├── config.py          # Graph-level configuration  
+│   │   │   └── nodes/  
+│   │   │       ├── base/          # Base node implementations  
+│   │   │       │   ├── node.py    # Abstract base node [DONE]  
+│   │   │       │   ├── llm.py     # LLM node implementation [DONE]  
+│   │   │       │   └── tool.py    # Simple tool wrapper node [DONE]  
+│   │   │       ├── actions.py     # Enhanced tool node w/ checks & hooks [DONE]  
+│   │   │       └── context.py     # Context management node(s) [IN PROGRESS]  
+│   │   ├── prompts/               # [CORE]  
+│   │   │   ├── base.py           # Core prompt templates [DONE]  
+│   │   │   └── persona.py        # Agent persona definitions [DONE]  
+│   │   └── tools/                 # [CORE]  
+│   │       ├── calculator.py      # Basic arithmetic tool [TESTED]  
+│   │       ├── discord_tool.py    # Discord integration tool [COMPLETE]  
+│   │       └── image.py           # Image generation tool [TESTED]  
+│   ├── core/  
+│   │   ├── extensions/            # Platform integrations  
+│   │   │   ├── config.py         # Extension configuration [DONE]  
+│   │   │   └── discord/          # [COMPLETE]  
+│   │   │       ├── client.py     # Discord bot client  
+│   │   │       └── runtime.py    # Discord-specific runtime environment  
+│   │   └── logger.py             # Centralized logging (alternative to base/logging.py) [DONE]  
+│   └── tests/                     # Test suite  
+│       ├── ai/  
+│       │   ├── base/             # Core agent tests [DONE]  
+│       │   ├── graph/            # Graph system tests [IN PROGRESS]  
+│       │   └── tools/            # Tool implementation tests [DONE]  
+│       └── core/  
+│           ├── extensions/       # Platform integration tests [DONE]  
+│           └── mirascope/       # Mirascope integration tests [DONE]  
+└── examples/                      # Example implementations  
+    ├── discord/                   # Discord bot examples  
+    │   ├── chatbot.py  
+    │   └── run_bot.py  
+    ├── graph/                     # Graph workflow examples [IN PROGRESS]  
+    │   ├── analysis_workflow.py  
+    │   ├── discord_workflow.py  
+    │   └── newsletter_workflow.py  
+    └── local_chatbot.py  
+
+---
+
+## 2. System Architecture Overview
+
+Alchemist is built around two major subsystems:
+
+1. **Agent System** (in alchemist/ai/base/agent.py, plus supporting modules):  
+   - The agent is provider-agnostic and uses Mirascope as an abstraction layer for LLM calls.  
+   - Agents can call tools, maintain conversation state, and either perform single-call (`_call`) or step-based (`_step`) interactions.  
+   - We use Pydantic for data validation and docstrings to clearly specify usage.  
+
+2. **Graph System** (in alchemist/ai/graph/):  
+   - Provides a workflow framework for chaining together nodes that may call LLMs, tools, or context managers.
+   - The `Graph` (base.py) orchestrates node execution, parallelization, and stateful transitions.
+   - Nodes use input_map for explicit data mapping from NodeState, supporting nested key lookups.
+   - Built-in support for workflow patterns like chaining, looping, and terminal nodes.
+   - All nodes are validated via Pydantic models and use async processing.
+
+Information flows like this:  
+1. An Agent receives user input.
+2. The Graph system orchestrates which node to call next.
+3. Each node maps its required inputs from NodeState using input_map.
+4. The node processes data (LLM call, tool execution, etc.).
+5. Results are stored in NodeState, which can be persisted by StateManager.
+
+---
+
+## 3. Core Features & Capabilities
+
+1. **Provider-Agnostic LLM Integration**  
+   - Mirascope allows us to easily switch between GPT-4o-mini, Claude-3-5-sonnet, OpenPipe, or other providers.  
+   - The agent code uses `_call` or `_step` to handle the conversation.  
+
+2. **Tools & Action Nodes**  
+   - Tools (calculator, image generation, Discord, etc.) can be invoked either by the agent or directly from the Graph.  
+   - ActionNode adds pre/post hooks for more advanced workflows.  
+
+3. **Asynchronous Execution**  
+   - Both the agent calls and the node processes are async to accommodate external I/O.  
+
+4. **State Management & Data Mapping**
+   - The Graph tracks results and shared data in a NodeState object.
+   - Nodes use input_map to explicitly declare and validate their data requirements.
+   - Support for nested key lookups (e.g., "request.user.name") in NodeState.
+   - Built-in TerminalNode for workflow completion.
+   - Loop detection and controlled repetition of workflow segments.
+
+5. **Workflow Patterns**
+   - Chain utility for simple sequential node connections.
+   - Support for parallel execution paths.
+   - Loop control for repeated execution of workflow segments.
+   - Built-in terminal nodes for clean workflow completion.
+
+6. **Extensions**  
+   - The core/ directory contains platform-specific integrations (e.g., Discord), bots, and runtimes.  
+
+---
+
+## 4. Development Status & Roadmap
+
+### 4.1 Current Status
+
+• Agent System:  
+  - BaseAgent is fully operational, integrated with tools, tested, and uses Mirascope provider-agnostic calls.  
+  - Logging is centralized in either `base/logging.py` or `core/logger.py`.  
+
+• Graph System (~85% Complete):  
+  - We have base Graph (state, config) and node types (LLMNode, ToolNode, ActionNode).  
+  - Parallel execution in base.py, plus partial subgraph logic.  
+  - ContextNode is partially implemented to handle external context (e.g., time, memory).  
+
+• Tools (calculator, image, Discord integration):  
+  - All tested or completed.  
+  - Tools are straightforward function calls or asynchronous calls.  
+
+• Extensions:  
+  - Discord integration is stable.  
+  - Config-based channel management done.  
+
+• Examples:  
+  - Some graph usage examples exist (analysis_workflow, newsletter_workflow).  
+  - More thorough usage examples are in progress.  
+
+### 4.2 Roadmap / Next Steps
+
+1. **Context Management**  
+   - Finalize ContextNode for memory/time/facts injection.  
+   - Provide a consistent interface for external data fetch and injection into NodeState.  
+
+2. **Checkpointing & Persistence**  
+   - Use StateManager's "persist_state" method, but extend to external storage (e.g., Supabase).  
+   - This will allow long-running flows to recover from interruptions.  
+
+3. **Memory System**  
+   - Introduce or unify with the context approach so that agent queries can pull relevant historical data.  
+   - We plan to integrate Supabase with a memory library (RAG-style retrieval).  
+
+4. **Subgraph & Parallel Workflows**  
+   - Enhance the base Graph for nested subgraphs.  
+   - Improve concurrency or parallel node execution.  
+
+5. **Advanced Error Handling**  
+   - Introduce retry logic, fallback nodes, or specialized "error" pathways.  
+
+6. **Documentation & Testing**  
+   - Expand test coverage for context, memory, parallel node flows.  
+   - Provide end-to-end examples in "examples/graph/."  
+
+---
+
+## 5. Integration Patterns
+
+1. **Using the Agent Directly**  
+   - For simple scripts, instantiate BaseAgent, call `_call`, or run `agent.run()` for an interactive loop.  
+   - Tools can be attached to the agent to handle user requests.  
+
+2. **Using the Graph**  
+   - Create a Graph, define nodes (LLMNode, ToolNode, ActionNode, etc.).  
+   - Provide NodeState as input, run the graph from a specified start node.  
+   - The Graph orchestrates calls to agent._step() or agent._call().  
+
+3. **Runtime Integration**  
+   - For specialized environments (e.g., Discord), rely on core/extensions/discord/ to handle inbound messages.  
+   - The extension calls the Graph system or agent code in response to events.  
+
+---
+
+## 6. Example Usage
+
+Below outlines common usage patterns with the enhanced Graph system:
+
+```python
+from alchemist.ai.graph import Graph, chain
+from alchemist.ai.graph.nodes import LLMNode, ToolNode, TerminalNode
+from alchemist.ai.graph.state import NodeState
+
+# 1. Using the chain utility for simple workflows
+workflow = chain([
+    LLMNode(
+        id="interpret",
+        input_map={"query": "user_input"},
+        prompt_template=interpret_prompt
+    ),
+    ToolNode(
+        id="fetch",
+        input_map={"search_term": "interpret.result"},
+        tool=search_tool
+    ),
+    TerminalNode(id="end")
+])
+
+# 2. Creating loops in workflows
+analyze_node = LLMNode(
+    id="analyze",
+    input_map={
+        "content": "fetch.result",
+        "previous_analysis": "analyze.result"  # Access previous iteration
+    },
+    loop_condition="needs_refinement",  # Will loop back if this condition is met
+    max_loops=3
+)
+
+# 3. Using nested key lookups
+request_node = ToolNode(
+    id="api_call",
+    input_map={
+        "user_id": "request.user.id",
+        "preferences": "user_data.settings.preferences"
+    }
+)
+
+# 4. Running the workflow
+state = NodeState()
+state.set_data("user_input", "What's the weather in Paris?")
+final_state = await graph.run("start", state)
+```
+
+---
+
+## 7. Testing     
+
+- The test suite lives in alchemist/tests/.  
+- We use pytest for asynchronous tests of agent methods, graph workflows, and tools.  
+- Additional usage patterns are documented in inline docstrings and example scripts.  
+
+Key test folders:  
+• alchemist/tests/ai/graph – Tests graph nodes, state management, parallel flows, error handling.  
+• alchemist/tests/ai/tools – Tests each tool.  
+• alchemist/tests/core/extensions – Tests platform-specific extensions (Discord, etc.).  
+
+---
+
+## 8. Conclusion & Future Directions
+
+Alchemist aims to unify agent-based AI workflows with powerful, configurable graph orchestration. By leveraging pydantic, asynchronous calls, Mirascope LLMS, and flexible tool usage, we support a wide range of use-cases:
+
+1. Interactive chatbots and tool usage.  
+2. Automated workflows for summarizing, analyzing, or generating content.  
+3. Context- and memory-driven flows using external data sources.  
+4. Platform integrations (Discord, Slack, etc.) with minimal extra code.
+
+Planned features (like robust checkpointing, subgraph composition, updated memory integration, and advanced error handling) are next milestones. The goal is to provide a production-ready framework that remains flexible, provider-agnostic, and easy to extend.
+
+For inquiries, reach out to the Agency42 team or refer to our internal wiki for detailed guides!

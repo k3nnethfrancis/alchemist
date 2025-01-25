@@ -1,0 +1,227 @@
+# Graph Build Notes
+
+This document outlines the Alchemist Graph system in-depth, covering design goals, architectural considerations, node interactions, state management, context injection, subgraphs, error handling, and future enhancements. It also provides a step-by-step plan for upcoming improvements.
+
+---
+
+## Table of Contents
+1. Overview of the Graph System  
+2. Architectural Components  
+   1. Node Abstraction  
+   2. Graph Execution Model  
+   3. State Management & Checkpointing  
+3. Current Status & Known Issues  
+4. Proposed Enhancements  
+   1. Context Management  
+   2. Expanded Checkpointing  
+   3. Subgraphs & Parallel Logic  
+   4. Error Recovery Patterns  
+5. Implementation Notes  
+   1. Node Inheritance & Type Hierarchy  
+   2. Agent Integration  
+   3. Asynchronous Execution  
+   4. Configuration  
+6. Future Plans & Next Steps  
+
+---
+
+## 1. Overview of the Graph System
+
+The Alchemist Graph system provides a flexible, asynchronous workflow engine for orchestrating AI operations. A "Graph" is composed of nodes that each represents a single unit of work, such as:
+
+• Calling an LLM (LLMNode).  
+• Executing a tool (ToolNode).  
+• Performing advanced tool usage with hooks (ActionNode).  
+• Injecting external context into the workflow (ContextNode).  
+
+The graph can route from node to node based on success or error outcomes, and it stores intermediate results in a state object (NodeState). This model enables complex sequences of AI interactions while remaining provider-agnostic and easily composable.
+
+---
+
+## 2. Architectural Components
+
+### 2.1 Node Abstraction
+
+All nodes inherit from a base Node class in alchemist/ai/graph/nodes/base/node.py. The key responsibilities of a node are:
+1. Validate its own configuration (e.g., ensuring required parameters exist).  
+2. Process incoming data and produce results (e.g., call an LLM through the agent).  
+3. Return the identifier of the next node to execute (or None if there is no next).  
+
+By using Pydantic for validation, we ensure consistent data handling for each subclass. Specialized nodes (LLMNode, ToolNode, ActionNode, ContextNode) override the process() method to perform their logic.
+
+### 2.2 Graph Execution Model
+
+The Graph class in alchemist/ai/graph/base.py manages:
+• Node registration and chaining (add_node, chain utility).  
+• Entry points (add_entry_point).  
+• Run logic (run).  
+• Orchestrating transitions based on node outputs.  
+• Handling parallel or sequential execution if configured.  
+• Supporting loops and repeated execution segments.  
+• Rooting errors to designated "error" paths.  
+
+During execution:  
+1. The user calls graph.run(start_node_id, state).  
+2. The graph executes each node in turn, updating NodeState.  
+3. Nodes can access data via input_map with support for nested keys.
+4. If a node has next_nodes with multiple outcomes (e.g., "default," "error", "loop"), the graph picks the next node's ID based on the node's return value.  
+5. The process ends when hitting a TerminalNode or an error path with no transitions.
+
+### 2.3 State Management & Data Access
+
+• NodeState (in alchemist/ai/graph/state.py) stores:
+  – results: intermediate or final node outputs, keyed by node ID.  
+  – data: shared input data or ephemeral context.  
+  – errors: recorded errors or exceptions.  
+
+• Data Access Patterns:
+  – Nodes use input_map to declare required data:
+    """python
+    input_map = {
+        "user_name": "request.user.name",  # Nested lookup in data
+        "previous_result": "analyze.output"  # Node result lookup
+    }
+    """
+  – Nested key support allows deep dictionary traversal
+  – Results are automatically stored under node.id
+
+• Built-in Utilities:
+  – chain([node1, node2, ...]) for sequential workflows
+  – TerminalNode for workflow completion
+  – Loop control via loop_condition and max_loops
+
+• StateManager (also in state.py) can persist NodeState in an in-memory dict.  
+  – We plan to extend persist_state and retrieve_state to store and load from external systems (e.g., Supabase) for "checkpointing." This allows resuming workflows after interruption.
+
+---
+
+## 3. Current Status & Known Issues
+
+1. **Basic Flow**: The base Graph, LLMNode, ToolNode, and ActionNode are stable.  
+2. **ContextNode**: In development. It will fetch external data (e.g., memory from a DB) and inject into NodeState.  
+3. **Checkpointing**: Currently only in-memory. We want to add real persistence to handle partial or long-running workflows.  
+4. **Parallel Execution**: The design supports parallel paths, but more robust tests and examples are needed to confirm concurrency at scale.  
+5. **Error Handling**: Minimal error routing is present (e.g., returning next_node_id="error"), but advanced patterns (like retries) are not implemented yet.
+
+---
+
+## 4. Proposed Enhancements
+
+### 4.1 Input Mapping & Data Access
+- Enhanced input_map validation and error messages
+- Support for optional vs required input mappings
+- Helper methods for common data transformation patterns
+- Documentation of best practices for data flow
+
+### 4.2 Workflow Patterns
+- Expand chain utility with branching and merging support
+- Add common loop patterns (while, do-while, for-each)
+- Support for conditional execution paths
+- Built-in workflow templates for common use cases
+
+### 4.3 Subgraphs & Parallel Logic
+- Introduce "composite" nodes or references that trigger an entire subgraph.  
+- For parallel logic, ensure run() can schedule tasks concurrently.  
+- Provide a small subgraph example (like a branch that processes multiple tool calls in parallel and merges results).
+
+### 4.4 Error Recovery Patterns
+- Introduce node-level retries:  
+  – e.g., Adorning a node with a "retry" parameter or a "max_attempts" field.  
+  – Store each retry attempt in NodeState.  
+- Provide fallback or "on_error" nodes for each node, enabling a more robust error path.
+
+---
+
+## 5. Implementation Notes
+
+### 5.1 Node Inheritance & Type Hierarchy
+- Base Node → LLMNode, ToolNode, ContextNode, TerminalNode
+- All nodes support input_map for data access
+- Specialized nodes (LLMNode, ToolNode) add type-specific functionality
+- TerminalNode provides clean workflow completion
+
+### 5.2 Data Flow & State Management
+- NodeState supports nested dictionary access
+- Input mapping occurs before node processing
+- Results are automatically stored in state.results[node.id]
+- Loop detection prevents infinite cycles
+- Chain utility manages node connections automatically
+
+### 5.3 Agent Integration
+- LLMNode calls agent._step() or agent._call() to retrieve LLM responses.  
+- Tool/ActionNodes can optionally ask the agent to orchestrate tool usage, or directly call Python functions / Mirascope "tools."  
+- If an agent requires context from NodeState, ensure the node merges that data into the agent's conversation as needed.
+
+### 5.4 Configuration
+- GraphConfig (in alchemist/ai/graph/config.py) defines high-level graph settings:
+  – e.g., default concurrency, node-level overrides, or checkpoint intervals.  
+- Each node can read specific sub-config from GraphConfig[node_id] if needed.
+
+---
+
+## 6. Future Plans & Next Steps
+
+1. **Finalize ContextNode**  
+   - Implement a memory retrieval example from Supabase or Neo4j.  
+   - Provide visual or textual documentation in /examples/graph/.  
+
+2. **Checkpointing**  
+   - Decide on a default external store (Supabase, local DB) for NodeState.  
+   - Potentially store partial states after each node or at configurable checkpoints.  
+
+3. **Enhanced Subgraphs**  
+   - Add a SubgraphNode or a design pattern that triggers a nested Graph.  
+   - Let the parent Graph consume the child Graph results.  
+
+4. **Improved Tests & Documentation**  
+   - Expand tests in alchemist/tests/ai/graph to cover concurrency, subgraphs, advanced error routing.  
+   - Provide code examples that show how to build a multi-step pipeline with context, memory, LLM calls, and tools.  
+
+5. **Error Handling & Re-Execution**  
+   - Support node-level "retry" parameters or automatic fallback nodes.  
+   - Provide a method to re-run the Graph from a specific node post-failure.  
+
+With these changes, the Graph system will evolve into a robust AI orchestration framework capable of handling real-world workflows and complex memory-driven flows. For additional guidance or architectural decisions, consult the internal wiki or reach out to Agency42's Alchemist team.
+
+## 6. Example Patterns
+
+Here are key workflow patterns supported by the system:
+
+"""python
+# 1. Basic Sequential Chain
+workflow = chain([
+    LLMNode(id="parse", input_map={"text": "user_input"}),
+    ToolNode(id="fetch", input_map={"query": "parse.result"}),
+    TerminalNode(id="end")
+])
+
+# 2. Loop Pattern
+analyze = LLMNode(
+    id="analyze",
+    input_map={
+        "content": "fetch.result",
+        "previous": "analyze.result"
+    },
+    loop_condition="needs_refinement",
+    max_loops=3
+)
+
+# 3. Nested Data Access
+process = ToolNode(
+    id="process",
+    input_map={
+        "user_id": "request.user.id",
+        "settings": "config.user.preferences.default"
+    }
+)
+
+# 4. Error Handling with Fallback
+try_api = ToolNode(
+    id="api_call",
+    input_map={"params": "request.data"},
+    next_nodes={
+        "default": "success",
+        "error": "fallback"
+    }
+)
+"""

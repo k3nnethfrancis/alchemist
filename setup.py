@@ -3,15 +3,12 @@ from setuptools import setup, find_packages
 setup(
     name="alchemist",
     version="0.1.0",
-    packages=find_packages(include=['alchemist', 'alchemist.*']),
+    packages=find_packages(),
     install_requires=[
-        "discord.py",
-        "python-dotenv",
         "pydantic",
-        "openai",
-        "anthropic",
         "pytest",
         "pytest-asyncio",
+        "mirascope"
     ],
     python_requires=">=3.8",
     # Add metadata for PyPI

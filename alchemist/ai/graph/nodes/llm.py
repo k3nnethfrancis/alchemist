@@ -6,7 +6,8 @@ from pydantic import Field
 
 from alchemist.ai.base.agent import BaseAgent
 from alchemist.ai.base.logging import get_logger, LogComponent
-from alchemist.ai.graph.nodes.base.node import Node, NodeState
+from alchemist.ai.graph.nodes.base.node import Node
+from alchemist.ai.graph.state import NodeState, NodeStatus
 from mirascope.core import BaseMessageParam, Messages, prompt_template
 
 # Get logger for node operations
@@ -41,6 +42,9 @@ class LLMNode(Node):
             str: Next node ID
         """
         try:
+            # Prepare input data using input_map
+            input_data = self._prepare_input_data(state)
+            
             # Get or create agent
             agent = self.agent or BaseAgent(
                 system_prompt=self.system_prompt,
@@ -49,31 +53,26 @@ class LLMNode(Node):
             
             # Get prompt using template or raw string
             if self.prompt_template:
-                # Extract data for template
-                template_data = {}
-                template_data.update(state.data)
-                for node_id, result in state.results.items():
-                    if isinstance(result, dict):
-                        template_data.update(result)
-                    else:
-                        template_data[f"{node_id}_result"] = result
-                
-                # Generate messages using template
-                messages = self.prompt_template(**template_data)
-                response = await agent.get_response(messages)
+                # Generate messages using prompt_template and input_data
+                messages = self.prompt_template(**input_data)
+                response = await agent._step(str(messages))
             else:
-                # Use raw prompt string
-                formatted_prompt = self._format_prompt(state)
-                response = await agent.get_response(formatted_prompt)
+                # Use raw prompt string and format with input_data
+                formatted_prompt = self.prompt.format(**input_data)
+                response = await agent._step(formatted_prompt)
             
-            # Store result
+            # Store result and mark status
             state.results[self.id] = {"response": response}
+            state.mark_status(self.id, NodeStatus.COMPLETED)
             
             return self.get_next_node()
             
         except Exception as e:
             logger.error(f"Error in LLM node {self.id}: {str(e)}")
             state.errors[self.id] = str(e)
+            state.mark_status(self.id, NodeStatus.ERROR)
+            # Ensure we have an entry in results even on error
+            state.results[self.id] = {"error": str(e)}
             return self.get_next_node("error")
     
     def _format_prompt(self, state: NodeState) -> str:
@@ -100,6 +99,7 @@ class LLMNode(Node):
     def validate(self) -> bool:
         """Validate node configuration."""
         if not (self.prompt or self.prompt_template):
+            logger.error(f"LLMNode {self.id} requires either a prompt or prompt_template.")
             return False
         return super().validate()
 
