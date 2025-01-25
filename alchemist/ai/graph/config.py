@@ -13,8 +13,8 @@ class GraphConfig(BaseModel):
     Configuration management for Graph objects.
 
     Attributes:
-        config: A dictionary of arbitrary config entries.
-        node_configs: A mapping of node type -> dictionary of config options.
+        config: General configuration options
+        node_configs: Node-type specific configurations
     """
 
     config: Dict[str, Any] = Field(default_factory=dict)

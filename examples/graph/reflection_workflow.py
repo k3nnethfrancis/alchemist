@@ -1,96 +1,120 @@
 """
-A simple reflective chatbot using the Graph framework.
-
-This example demonstrates how to:
-1. Create a graph with two nodes (thinking and response)
-2. Use LLM nodes for reflection and response generation
-3. Run an interactive chat loop with the workflow
+Reflection Workflow Example: Multi-step reasoning with Chain of Thought.
 """
 
 import asyncio
-from pathlib import Path
-from alchemist.ai.graph.base import Graph, NodeState
-from alchemist.ai.graph.nodes.base.llm import LLMNode
-from alchemist.ai.base.logging import configure_logging, LogComponent, LogLevel
+from datetime import datetime
+from alchemist.ai.base.agent import BaseAgent
+from alchemist.ai.graph.base import Graph
+from alchemist.ai.graph.nodes.agent import AgentNode
+from alchemist.ai.graph.nodes.terminal import TerminalNode
+from alchemist.ai.graph.state import NodeState
+from alchemist.ai.base.logging import (
+    configure_logging, 
+    LogLevel, 
+    LogComponent, 
+    get_logger,
+    Colors,
+    VerbosityLevel,
+    AlchemistLoggingConfig
+)
 
-# Set up basic logging
-log_dir = Path("logs/reflection_workflow")
-log_dir.mkdir(parents=True, exist_ok=True)
-configure_logging(log_file=str(log_dir / "reflection.log"))
+# Update logging configuration to show less debug noise
+configure_logging(
+    default_level=LogLevel.INFO,
+    component_levels={
+        LogComponent.WORKFLOW: LogLevel.INFO,
+        LogComponent.AGENT: LogLevel.INFO,
+        LogComponent.GRAPH: LogLevel.INFO,
+        LogComponent.NODES: LogLevel.INFO
+    }
+)
 
-class ReflectionWorkflow:
-    """A simple workflow that reflects on user input and generates thoughtful responses."""
-    
-    def __init__(self):
-        self.graph = self._create_graph()
-    
-    def _create_graph(self) -> Graph:
-        """Create a two-node graph for reflection and response."""
-        graph = Graph()
-        
-        # First node: Think deeply about the user's input
-        think_node = LLMNode(
-            id="think",
-            prompt="""Reflect deeply on this input, considering:
-            - The underlying meaning or intent
-            - Any assumptions or implications
-            - Potential areas for exploration
-            
-            User input: {message}""",
-            next_nodes={"default": "respond"}
+logger = get_logger(LogComponent.WORKFLOW)
+
+async def run_reflection_workflow() -> None:
+    """
+    Build and execute the reflection workflow.
+    """
+    graph = Graph(
+        logging_config=AlchemistLoggingConfig(
+            level=VerbosityLevel.INFO,
+            show_llm_messages=True,
+            show_node_transitions=True,
+            show_tool_calls=True
         )
-        
-        # Second node: Generate a friendly, insightful response
-        respond_node = LLMNode(
-            id="respond",
-            prompt="""Based on our reflection, craft a friendly and insightful response.
-            Make it conversational but meaningful.
-            
-            Our reflection: {think_result}""",
-            next_nodes={"default": None}  # End of workflow
-        )
-        
-        # Add nodes and entry point
-        graph.add_node(think_node)
-        graph.add_node(respond_node)
-        graph.add_entry_point("start", "think")
-        
-        return graph
+    )
     
-    async def chat(self):
-        """Run an interactive chat session."""
-        print("\nReflective Bot: Hi! I'm here to help you reflect. Type 'exit' to quit.")
-        
-        while True:
-            try:
-                # Get user input
-                user_input = input("\nYou: ").strip()
-                if user_input.lower() in ["exit", "quit", "bye"]:
-                    print("\nReflective Bot: Goodbye! Take care!")
-                    break
+    agent = BaseAgent()
+    
+    # Define reflection nodes with detailed logging callback
+    def log_thinking_step(step_name: str):
+        async def callback(state: NodeState, node_id: str) -> None:
+            if node_id in state.results:
+                result = state.results[node_id]
+                print(f"\n{Colors.BOLD}{'=' * 50}{Colors.RESET}")
+                print(f"{Colors.BOLD}🤔 {step_name}{Colors.RESET}")
+                print(f"{Colors.BOLD}{'-' * 50}{Colors.RESET}")
+                print(f"{Colors.INFO}{result.get('response', '')}{Colors.RESET}")
+                print(f"{Colors.DIM}Time: {result.get('timing', 0):.1f}s{Colors.RESET}")
+                print(f"{Colors.BOLD}{'=' * 50}{Colors.RESET}\n")
                 
-                # Prepare state with user's message
-                state = NodeState()
-                state.data["message"] = user_input
-                
-                # Run the reflection workflow
-                final_state = await self.graph.run("start", state)
-                
-                # Get the response from the final node
-                response = final_state.results.get("respond", {}).get("response", 
-                    "I need a moment to reflect on that.")
-                print(f"\nReflective Bot: {response}")
-                
-            except KeyboardInterrupt:
-                print("\nReflective Bot: Session ended. Take care!")
-                break
-            except Exception as e:
-                print(f"\nReflective Bot: I encountered an error: {str(e)}")
+                # Also log to logger for file output
+                logger.info(
+                    f"\n💭 {step_name} completed in {result.get('timing', 0):.1f}s"
+                )
+        return callback
 
-def main():
-    """Run the reflection workflow."""
-    workflow = ReflectionWorkflow()
-    asyncio.run(workflow.chat())
+    initial_reflection = AgentNode(
+        id="initial_reflection",
+        prompt="Step 1: Initial Assessment\nThe user said: {user_input}\nProvide your initial thoughts and assessment.",
+        agent=agent,
+        input_map={"user_input": "data.input_text"},
+        next_nodes={"default": "deep_reflection"},
+        metadata={"on_complete": log_thinking_step("Initial Assessment")}
+    )
+
+    deep_reflection = AgentNode(
+        id="deep_reflection",
+        prompt="Step 2: Deep Analysis\nInitial assessment: {initial_thoughts}\nNow analyze deeper implications.",
+        agent=agent,
+        input_map={"initial_thoughts": "node.initial_reflection.response"},
+        next_nodes={"default": "final_synthesis"},
+        metadata={"on_complete": log_thinking_step("Deep Analysis")}
+    )
+
+    final_synthesis = AgentNode(
+        id="final_synthesis",
+        prompt="Step 3: Final Synthesis\nInitial: {initial_thoughts}\nDeep: {deep_analysis}\nSynthesize a final response.",
+        agent=agent,
+        input_map={
+            "initial_thoughts": "node.initial_reflection.response",
+            "deep_analysis": "node.deep_reflection.response"
+        },
+        next_nodes={"default": "end"},
+        metadata={"on_complete": log_thinking_step("Final Synthesis")}
+    )
+
+    # Add nodes and set entry point
+    for node in [initial_reflection, deep_reflection, final_synthesis, TerminalNode(id="end")]:
+        graph.add_node(node)
+    graph.add_entry_point("start", "initial_reflection")
+
+    # Run workflow with better progress indication
+    state = NodeState()
+    state.set_data(
+        "input_text", 
+        "If doug's dad is bob's cousin, and bob's dad is dave's dad, what is the relationship between doug and dave?"
+    )
+    
+    print(f"\n{Colors.BOLD}🔍 Analyzing Question:{Colors.RESET}")
+    print(f"{Colors.INFO}{state.data['input_text']}{Colors.RESET}\n")
+    
+    start_time = datetime.now()
+    final_state = await graph.run("start", state)
+    
+    elapsed = (datetime.now() - start_time).total_seconds()
+    print(f"\n{Colors.SUCCESS}✨ Analysis Complete in {elapsed:.1f}s{Colors.RESET}\n")
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(run_reflection_workflow())

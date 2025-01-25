@@ -7,14 +7,14 @@ It's intentionally minimal, as the memory system will be implemented later.
 Usage Ideas:
 ------------
 1. Pull relevant user or session data from an external store (e.g., Supabase).
-2. Inject that data into NodeState for subsequent nodes (LLMNode, ToolNode).
+2. Inject that data into NodeState for subsequent nodes (AgentNode, ActionNode).
 3. Optionally transform or filter context (like summarizing stale info).
 """
 
 from typing import Optional
 from pydantic import Field
-from alchemist.ai.graph.nodes.base.node import Node, NodeState
-from alchemist.ai.graph.state import NodeStateProtocol
+from alchemist.ai.graph.nodes.base.node import Node
+from alchemist.ai.graph.state import NodeState, NodeStateProtocol
 
 class ContextNode(Node):
     """Node that fetches and injects external context into the node state."""

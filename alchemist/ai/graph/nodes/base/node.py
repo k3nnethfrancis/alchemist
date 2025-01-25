@@ -12,8 +12,14 @@ Typical Usage:
 """
 
 import abc
-from typing import Dict, Any, Optional, Protocol, runtime_checkable
+from typing import Tuple, Dict, Any, Optional, Protocol, runtime_checkable, TYPE_CHECKING
 from pydantic import BaseModel, Field, model_validator
+from alchemist.ai.base.logging import get_logger, LogComponent
+from alchemist.ai.graph.state import NodeStateProtocol
+import re
+
+if TYPE_CHECKING:
+    from alchemist.ai.graph.state import NodeState
 
 @runtime_checkable
 class NodeStateProtocol(Protocol):
@@ -22,63 +28,45 @@ class NodeStateProtocol(Protocol):
     results: Dict[str, Any]
     errors: Dict[str, str]
 
-class Node(BaseModel, abc.ABC):
-    """
-    Abstract base class for all nodes in the Graph.
+# Get logger for node operations
+logger = get_logger(LogComponent.NODES)
 
+class Node(BaseModel):
+    """
+    Abstract base node for graph operations.
+    
     Attributes:
-        id: Unique identifier for the node. Must be set before adding the node to the graph.
-        next_nodes: A mapping of transition keys to follow-up node IDs.
-        metadata: Arbitrary metadata for node configuration.
-        parallel: If True, this node can run in parallel with others in the graph.
-        input_map: Optional mapping of parameter names to keys in NodeState data or results.
+        id: Unique node identifier
+        next_nodes: Mapping of conditions to next node IDs
+        metadata: Optional node metadata
+        parallel: Whether node can run in parallel
+        input_map: Mapping of parameter names to state references
     """
-
-    id: str = Field(
-        ...,
-        description="Unique identifier for this node in the graph."
+    id: str = Field(..., description="Unique identifier for this node")
+    next_nodes: Dict[str, Optional[str]] = Field(
+        default_factory=lambda: {"default": None, "error": None}
     )
-    next_nodes: Dict[str, str] = Field(
-        default_factory=dict,
-        description="Mapping of transition keys to next node IDs."
-    )
-    metadata: Dict[str, Any] = Field(
-        default_factory=dict,
-        description="Additional metadata or configuration for this node."
-    )
-    parallel: bool = Field(
-        default=False,
-        description="If True, this node can be executed in parallel with others."
-    )
-    input_map: Dict[str, str] = Field(
-        default_factory=dict,
-        description="Mapping of parameter names to keys in NodeState data or results."
-    )
-
-    @model_validator(mode='after')
-    def check_id(self) -> 'Node':
-        """
-        Ensure 'id' is not empty or whitespace.
-        """
-        if not self.id.strip():
-            raise ValueError("Node id cannot be empty or whitespace.")
-        return self
+    metadata: Dict[str, Any] = Field(default_factory=dict)
+    parallel: bool = Field(default=False)
+    input_map: Dict[str, str] = Field(default_factory=dict)
 
     class Config:
-        """Pydantic configuration for Node."""
         arbitrary_types_allowed = True
 
-    def get_next_node(self, key: str = "default") -> Optional[str]:
-        """
-        Retrieve the ID of the next node based on the provided key.
+    @model_validator(mode='after')
+    def validate_node(self) -> 'Node':
+        """Validate node configuration."""
+        if not self.id:
+            raise ValueError("Node must have an ID")
+        return self
 
-        Args:
-            key: Identifier for the transition path. Defaults to 'default'.
+    def get_next_node(self, condition: str = "default") -> Optional[str]:
+        """Get next node ID for given condition."""
+        return self.next_nodes.get(condition)
 
-        Returns:
-            The ID of the next node if found, otherwise None.
-        """
-        return self.next_nodes.get(key)
+    async def process(self, state: "NodeState") -> Optional[str]:
+        """Process node logic. Must be implemented by subclasses."""
+        raise NotImplementedError("Subclasses must implement process()")
 
     def validate(self) -> bool:
         """
@@ -90,6 +78,52 @@ class Node(BaseModel, abc.ABC):
             True if the node is considered valid.
         """
         return True
+
+    @staticmethod
+    def _extract_node_reference(ref: str) -> Tuple[str, str]:
+        """
+        Extract the node ID and the nested key path from a string like 'node.my_node_id.some.deep.key'.
+        
+        Args:
+            ref: The reference string, beginning with 'node.'.
+
+        Returns:
+            Tuple of (node_id, nested_key).
+        
+        Raises:
+            ValueError if the format does not match the pattern 'node.<node_id>.<key>'.
+        """
+        # Must start with node. 
+        if not ref.startswith("node."):
+            raise ValueError(f"Invalid node reference: {ref}")
+        parts = ref.split('.', 2)
+        if len(parts) < 3:
+            # We need at least: 'node', node_id, some_key
+            raise ValueError(f"Reference must be at least 'node.<node_id>.<key>': {ref}")
+        node_id = parts[1]  # The segment after 'node.'
+        nested_key = parts[2]  # The remainder after node.<node_id>.
+        return node_id, nested_key
+
+    @staticmethod
+    def _extract_data_reference(ref: str) -> str:
+        """
+        Extract the nested key path from a string like 'data.some.deep.key'.
+
+        Args:
+            ref: The reference string, beginning with 'data.'.
+
+        Returns:
+            The nested key (e.g., 'some.deep.key').
+
+        Raises:
+            ValueError if the format does not match 'data.<key>'.
+        """
+        if not ref.startswith("data."):
+            raise ValueError(f"Invalid data reference: {ref}")
+        parts = ref.split('.', 1)
+        if len(parts) < 2:
+            raise ValueError(f"Reference must be at least 'data.<key>': {ref}")
+        return parts[1]
 
     def _get_nested_value(self, data: Dict[str, Any], dotted_key: str) -> Any:
         """
@@ -105,9 +139,8 @@ class Node(BaseModel, abc.ABC):
         Raises:
             ValueError: If the key path does not exist in the data.
         """
-        parts = dotted_key.split('.')
         current = data
-        for part in parts:
+        for part in dotted_key.split('.'):
             if not isinstance(current, dict) or part not in current:
                 raise ValueError(f"Key '{part}' not found while traversing '{dotted_key}'")
             current = current[part]
@@ -115,55 +148,52 @@ class Node(BaseModel, abc.ABC):
 
     def _prepare_input_data(self, state: NodeStateProtocol) -> Dict[str, Any]:
         """
-        Prepare input data for the node based on input_map and NodeState.
+        Prepare input data for the node based on input_map references and NodeState.
 
-        Args:
-            state: The current NodeState containing data and results.
+        This method interprets references like:
+            'node.<node_id>.<path>' - retrieves from state.results[node_id], nested by <path>
+            'data.<path>'           - retrieves from state.data, nested by <path>
 
         Returns:
-            A dictionary of input data for the node.
-
-        Raises:
-            ValueError: If a mapped key is not found in state data or results.
+            A dictionary of resolved parameters and their values.
         """
         input_data = {}
-        for param_name, state_key in self.input_map.items():
-            try:
-                # Try to get the value from state.data
-                input_data[param_name] = self._get_nested_value(state.data, state_key)
-                continue
-            except ValueError:
-                pass
-            # Try to get the value from state.results
-            found = False
-            for result in state.results.values():
-                if isinstance(result, dict):
-                    try:
-                        input_data[param_name] = self._get_nested_value(result, state_key)
-                        found = True
-                        break
-                    except ValueError:
-                        continue
-            if not found:
-                raise ValueError(
-                    f"Key '{state_key}' not found in state data or results for parameter '{param_name}'."
+        logger.debug(f"Node {self.id}: Preparing input data")
+        logger.debug(f"Node {self.id}: Current state results: {state.results}")
+        logger.debug(f"Node {self.id}: Current state data: {state.data}")
+        logger.debug(f"Node {self.id}: Input map: {self.input_map}")
+
+        for param_name, ref in self.input_map.items():
+            logger.debug(f"Node {self.id}: Processing parameter '{param_name}' with reference '{ref}'")
+
+            if ref.startswith("node."):
+                # Node result reference
+                node_id, nested_key = self._extract_node_reference(ref)
+                if node_id not in state.results:
+                    raise ValueError(
+                        f"Node ID '{node_id}' not found in results for param '{param_name}'. "
+                        f"Available results: {list(state.results.keys())}"
+                    )
+                value = self._get_nested_value(state.results[node_id], nested_key)
+                input_data[param_name] = value
+                logger.debug(f"Node {self.id}: Retrieved from node '{node_id}' with dotted_key '{nested_key}': {value}")
+
+            elif ref.startswith("data."):
+                # State data reference
+                data_path = self._extract_data_reference(ref)
+                value = self._get_nested_value(state.data, data_path)
+                input_data[param_name] = value
+                logger.debug(f"Node {self.id}: Retrieved from state data path '{data_path}': {value}")
+
+            else:
+                # If there's no prefix, we can either default to data or raise an error.
+                # Here, we choose to raise an error for clarity.
+                error_msg = (
+                    f"Invalid reference '{ref}' for param '{param_name}'. "
+                    "Must start with 'node.' or 'data.'."
                 )
-        return input_data
+                logger.error(f"Node {self.id}: {error_msg}")
+                raise ValueError(error_msg)
 
-    @abc.abstractmethod
-    async def process(self, state: NodeStateProtocol) -> Optional[str]:
-        """
-        Asynchronously process the node's logic.
-
-        This method must be implemented by subclasses and can:
-          1. Read or update the graph state via the provided 'state' object.
-          2. Perform LLM calls, tool executions, or other logic.
-          3. Return the identifier of the next node or None if this node is terminal.
-
-        Args:
-            state: An instance of NodeState for data and result handling.
-
-        Returns:
-            The ID of the next node to execute, or None if there is no subsequent node.
-        """
-        raise NotImplementedError("Subclasses must implement this method.") 
+        logger.debug(f"Node {self.id}: Final prepared input data: {input_data}")
+        return input_data 

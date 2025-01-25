@@ -1,17 +1,24 @@
-"""Action node implementations for workflow tool execution.
+"""
+Action Node Implementations
 
-In contrast to ToolNode, this module provides specialized nodes for executing tools
-in more complex workflows. ActionNode supports:
-    - Required state checks (ensuring certain data is present)
-    - Pre/post execution hooks (e.g., logging, retries)
-    - Action chaining
-    - Optional state cleaning or preservation
+This module merges the functionality of ToolNode and ActionNode into a single ActionNode class.
+It supports:
+    - Executing a tool (sync or async).
+    - Optional required state checks (required_state).
+    - Optional preservation of specific keys in state.results (preserve_state).
+    - Flexible input mapping from NodeState, including dotted key references.
+    - Standard transitions for "default" and "error" paths.
 
-ActionNode is ideal if you need more control over the lifecycle of a single tool call.
+Typical Use-Cases:
+-----------------
+1. Simple tool invocation with known inputs, e.g., arithmetic or search.
+2. Workflow steps requiring required_state to be present in NodeState.
+3. Automatic cleanup of NodeState to avoid downstream clutter.
+4. More advanced action logic (pre/post hooks, chaining) if needed.
 
 Example:
 --------
->>> from alchemist.ai.base.tools import CalculatorTool
+>>> from alchemist.ai.tools.calculator import CalculatorTool
 >>>
 >>> node = ActionNode(
 ...     id="calc_step",
@@ -19,187 +26,202 @@ Example:
 ...     description="Adds two numbers from node state",
 ...     tool=CalculatorTool(),
 ...     required_state=["calc_args"],
-...     preserve_state=["calc_args", "calc_step"],  # Keep these results
+...     preserve_state=["calc_args", "calc_step"],
 ...     next_nodes={"default": "next_node", "error": "error_node"},
 ... )
->>> # The node ensures 'calc_args' is present in the state before calling.
->>> # After execution, it removes extraneous keys from state.results.
+>>> # This node checks for 'calc_args' in state, calls the tool, then
+>>> # preserves certain keys in state.results, removing others.
 """
 
-import os
-import sys
 import asyncio
 import logging
-from typing import Dict, Any, Optional, List
-from pydantic import Field
+from typing import Dict, Any, Optional, List, Callable
+from pydantic import Field, model_validator
 
-# Add parent directories to path if running directly
-if __name__ == "__main__" and __package__ is None:
-    file = os.path.abspath(__file__)
-    parent = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(file))))
-    sys.path.insert(0, parent)
+from alchemist.ai.base.logging import get_logger, LogComponent
+from alchemist.ai.graph.nodes.base.node import Node
+from alchemist.ai.graph.state import NodeState, NodeStatus
 
-from alchemist.ai.graph.nodes.tool import ToolNode
-from alchemist.ai.graph.base import NodeState
-from alchemist.ai.tools.calculator import CalculatorTool
+logger = get_logger(LogComponent.NODES)
 
-logger = logging.getLogger(__name__)
 
-# Re-export ToolNode for backward compatibility
-__all__ = ['ActionNode']
-
-class ActionNode(ToolNode):
+class ActionNode(Node):
     """
-    Specialized node for workflow actions, extending ToolNode with workflow logic.
+    Unified node for executing a tool or function, with optional workflow logic.
 
-    Additional Features vs. ToolNode:
-    ---------------------------------
-    - required_state: A list of keys to verify before execution (fails if missing).
-    - preserve_state: A list of keys to keep in NodeState.results after execution. Other
-      entries may be removed to avoid polluting subsequent steps.
-    - name: Human-readable name for the action.
-    - description: High-level description (metadata) of the action.
-
-    Attributes:
-        name (str): A human-readable name for the action.
-        description (str): A description of what this action does.
-        chain_actions (bool): Whether to automatically chain the next action if one is set.
-        required_state (List[str]): NodeState keys that must be present in results to proceed.
-        preserve_state (List[str]): NodeState keys that must remain after execution.
-
-    Usage:
-    ------
-    - Pre-execution hook: `_validate_required_state(...)`
-    - Execute the tool: inherited from ToolNode
-    - Post-execution hook: `_cleanup_state(...)`
+    Features:
+        - tool (Callable): The function/tool to execute, sync or async.
+        - required_state (List[str]): A list of keys that must be present (in state.data or state.results).
+        - preserve_state (List[str]): Keys to keep in state.results after execution. Removes other non-node keys.
+        - name (str): Human-readable name for the action.
+        - description (str): High-level description of the action.
+        - args_key (str): (Optional) Key that references arguments in state for more complex usage patterns.
+        - output_key (str): The key under which tool results are stored in state.results[node.id].
     """
+    name: Optional[str] = Field(
+        default=None,
+        description="A human-readable name for the action."
+    )
+    description: Optional[str] = Field(
+        default=None,
+        description="A high-level description of what the action does."
+    )
+    tool: Callable = Field(
+        ...,
+        description="A callable (sync or async) that this node executes."
+    )
+    required_state: List[str] = Field(
+        default_factory=list,
+        description="Required state keys to check before execution."
+    )
+    preserve_state: List[str] = Field(
+        default_factory=list,
+        description="List of keys to preserve in results after execution. Others may be removed."
+    )
+    args_key: Optional[str] = Field(
+        default=None,
+        description="If set, references a key in state for advanced argument usage."
+    )
+    output_key: str = Field(
+        default="result",
+        description="The key under which the tool's result is stored in state.results[node.id]."
+    )
 
-    name: str
-    description: str = ""
-    chain_actions: bool = False
-    required_state: List[str] = Field(default_factory=list)
-    preserve_state: List[str] = Field(default_factory=list)
-    
+    @model_validator(mode='after')
+    def validate_tool_config(self) -> "ActionNode":
+        """Validate the configuration of the action node."""
+        if not callable(self.tool):
+            raise ValueError(f"ActionNode {self.id} requires a callable 'tool'.")
+        return self
+
     async def process(self, state: NodeState) -> Optional[str]:
         """
-        Execute action with optional pre/post hooks.
+        Execute the action and handle state management.
 
-        Workflow:
-            1. Validate required state keys.
-            2. Call the underlying tool (ToolNode process).
-            3. Clean up state if preserve_state is specified.
-            4. Return next node or error path.
+        1. Validate required_state.
+        2. Gather parameters from state using input_map (and optionally args_key).
+        3. Call the tool (sync or async).
+        4. Store result in state.results[node.id][output_key].
+        5. Optionally preserve or clean state results.
+        6. Mark node status and return next node.
 
         Args:
-            state: Current node state containing results and data.
+            state: The current NodeState.
 
         Returns:
-            str: The ID of the next node or None if this node is terminal.
+            str: The ID of the next node to execute, or "error" if an exception occurs.
         """
         try:
-            # 1. Validate presence of required keys in data/results
             self._validate_required_state(state)
-            
-            # 2. Run the inherited ToolNode logic
-            next_node_id = await super().process(state)
-            
-            # 3. Clean up after execution
+
+            # Prepare input data from base Node logic
+            inputs = self._prepare_input_data(state)
+
+            # If args_key is defined, we can inject it into inputs for more advanced patterns
+            if self.args_key:
+                if self.args_key in state.results:
+                    inputs.update(state.results[self.args_key])
+                elif self.args_key in state.data:
+                    # Possibly user stored tool args in state.data
+                    if isinstance(state.data[self.args_key], dict):
+                        inputs.update(state.data[self.args_key])
+                # else do nothing if it's missing; user can handle logic
+
+            # Execute the tool
+            if asyncio.iscoroutinefunction(self.tool):
+                result = await self.tool(**inputs)
+            else:
+                result = self.tool(**inputs)
+
+            # Store the result
+            state.results[self.id] = {self.output_key: result}
+
+            # Optionally preserve state
             self._cleanup_state(state)
-            
-            # 4. Possibly chain next node
-            if self.chain_actions and next_node_id:
-                logger.info(f"Chaining action {self.id} to {next_node_id}")
-                state.results[self.id]["chained"] = True
-            
-            return next_node_id
-            
+
+            state.mark_status(self.id, NodeStatus.COMPLETED)
+            return self.get_next_node()
+
         except Exception as e:
-            logger.error(f"Error in action {self.name}: {str(e)}")
-            state.results[self.id] = {
-                "error": str(e),
-                "action": self.name,
-                "state": {k: state.results.get(k) for k in self.required_state}
-            }
-            return self.next_nodes.get("error")
-    
-    async def pre_execute(self, state: NodeState) -> None:
-        """Hook for setup before action execution.
-        
-        Args:
-            state: Current node state
-        """
-        logger.debug(f"Pre-execute hook for action {self.name}")
-    
-    async def post_execute(self, state: NodeState) -> None:
-        """Hook for cleanup after action execution.
-        
-        Args:
-            state: Current node state
-        """
-        logger.debug(f"Post-execute hook for action {self.name}")
-    
+            logger.error(f"Error in action node '{self.id}': {str(e)}")
+            state.errors[self.id] = str(e)
+            state.mark_status(self.id, NodeStatus.ERROR)
+            return self.get_next_node("error")
+
     def _validate_required_state(self, state: NodeState) -> None:
         """
-        Required keys must exist in either state.results or state.data.
+        Confirm required_state keys exist in either state.results or state.data.
+        Raises ValueError if missing.
         """
-        missing = []
+        missing_keys = []
         for key in self.required_state:
             if key not in state.results and key not in state.data:
-                missing.append(key)
+                missing_keys.append(key)
+        if missing_keys:
+            raise ValueError(
+                f"Missing required state keys for node '{self.id}': {missing_keys}"
+            )
 
-        if missing:
-            raise ValueError(f"Missing required state keys: {missing}")
-    
     def _cleanup_state(self, state: NodeState) -> None:
         """
         Manage state preservation:
-        1. Copy preserved values from state.data to state.results if they exist
-        2. Keep preserved values already in state.results
-        3. Remove non-preserved values from state.results
+        1. Copy preserved values from state.data to state.results if not already present.
+        2. Keep preserved values in state.results.
+        3. Remove non-preserved values from state.results, except for the node's own result.
         """
         if not self.preserve_state:
             return
 
-        # First copy preserved values from state.data to results
+        # Copy preserved keys from data into results if not already in results
         for key in self.preserve_state:
             if key in state.data and key not in state.results:
                 state.results[key] = state.data[key]
 
-        # Then remove non-preserved values from results
+        # Remove non-preserved keys from results
         keys = list(state.results.keys())
         for k in keys:
+            # Do not remove the node's own result store
             if k not in self.preserve_state and k != self.id:
                 del state.results[k]
 
 async def test_action_node():
-    """Test action node functionality."""
-    print("\nTesting ActionNode...")
-    
-    # Create a test calculator action
-    calc = CalculatorTool()
+    """Basic test to demonstrate usage of the merged ActionNode."""
+    print("\nTesting merged ActionNode...")
+
+    # Define a simple test tool
+    async def add_tool(x: int, y: int) -> int:
+        return x + y
+
+    # Create test node with some required_state
     node = ActionNode(
-        id="test_calc",
-        name="Calculator Action",
-        description="Adds two numbers",
-        tool=calc,
-        args_key="calc_args",
+        id="add",
+        name="Addition Action",
+        tool=add_tool,
         required_state=["calc_args"],
-        preserve_state=["calc_args", "calc_step"],
-        next_nodes={"default": "next", "error": "error"}
+        preserve_state=["calc_args", "important_key"],
+        input_map={"x": "node.calc_args.x", "y": "node.calc_args.y"},
+        next_nodes={"default": "finished", "error": "error_node"},
+        args_key=None
     )
-    
+
     # Create test state
+    from alchemist.ai.graph.state import NodeState
     state = NodeState()
-    state.results["calc_args"] = {"expression": "2 + 2"}
-    
-    # Process node
+    # Suppose the user put 'calc_args' in results
+    state.results["calc_args"] = {"x": 2, "y": 3}
+    # Some random other key in results
+    state.results["garbage_key"] = True
+    # Some data that might be used
+    state.data["important_key"] = "Preserve me"
+
+    # Run
     next_id = await node.process(state)
-    
-    # Verify results
-    assert next_id == "next", f"Expected 'next', got {next_id}"
-    assert state.results["test_calc"]["result"] == 4, "Incorrect calculation"
-    print("ActionNode test passed!")
+
+    # Check
+    assert next_id == "finished", f"Expected 'finished', got {next_id}"
+    assert state.results["add"]["result"] == 5, "Incorrect result from action"
+    print("Merged ActionNode test passed! State results:", state.results)
 
 if __name__ == "__main__":
-    print(f"Running test from: {__file__}")
+    import asyncio
     asyncio.run(test_action_node()) 

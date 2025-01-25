@@ -26,7 +26,7 @@ Example (Pseudo-Code):
 
 """
 
-from typing import Dict, Any, Optional, Set
+from typing import Dict, Any, Optional, Set, Protocol
 from datetime import datetime
 from enum import Enum
 from pydantic import BaseModel, Field, model_validator
@@ -50,143 +50,91 @@ class NodeStatus(str, Enum):
     SKIPPED = "skipped"
     TERMINAL = "terminal"
 
+class NodeStateProtocol(Protocol):
+    """Protocol defining the required state interface for nodes."""
+    
+    data: Dict[str, Any]
+    results: Dict[str, Dict[str, Any]]
+    errors: Dict[str, str]
+    status: Dict[str, NodeStatus]
+    parallel_tasks: Set[str]
+    metadata: Dict[str, Any]
+    created_at: datetime
+    updated_at: datetime
 
-class NodeStateProtocol:
-    """
-    Protocol defining the required state interface for nodes.
-    """
-
-    def mark_status(self, node_id: str, status: NodeStatus) -> None:
-        ...
-
-    def add_parallel_task(self, node_id: str) -> None:
-        ...
-
-    def remove_parallel_task(self, node_id: str) -> None:
-        ...
-
-    def get_result(self, node_id: str, key: str) -> Any:
-        ...
-
-    def set_result(self, node_id: str, key: str, value: Any) -> None:
-        ...
-
-    def get_data(self, key: str) -> Any:
-        ...
-
-    def set_data(self, key: str, value: Any) -> None:
-        ...
-
-    def add_error(self, node_id: str, error: str) -> None:
-        ...
-
-    @property
-    def results(self) -> Dict[str, Dict[str, Any]]:
-        ...
-
-    @property
-    def data(self) -> Dict[str, Any]:
-        ...
-
-    @property
-    def errors(self) -> Dict[str, str]:
-        ...
-
-    @property
-    def status(self) -> Dict[str, NodeStatus]:
-        ...
-
-    @property
-    def parallel_tasks(self) -> Set[str]:
-        ...
-
-    @property
-    def metadata(self) -> Dict[str, Any]:
-        ...
-
-    @property
-    def created_at(self) -> datetime:
-        ...
-
-    @property
-    def updated_at(self) -> datetime:
-        ...
-
+    def mark_status(self, node_id: str, status: NodeStatus) -> None: ...
+    def add_parallel_task(self, node_id: str) -> None: ...
+    def remove_parallel_task(self, node_id: str) -> None: ...
+    def get_result(self, node_id: str, key: str) -> Any: ...
+    def set_result(self, node_id: str, key: str, value: Any) -> None: ...
+    def get_data(self, key: str) -> Any: ...
+    def set_data(self, key: str, value: Any) -> None: ...
+    def add_error(self, node_id: str, error: str) -> None: ...
+    def get_nested_data(self, dotted_key: str) -> Any: ...
+    def get_nested_result(self, node_id: str, dotted_key: str) -> Any: ...
 
 class NodeState(BaseModel):
     """
-    Concrete implementation of NodeStateProtocol using Pydantic.
-
+    Concrete implementation of NodeStateProtocol.
+    
     Attributes:
-        results: Dict of node results, keyed by node ID.
-        data: Shared input data or context.
-        errors: Recorded errors or exceptions.
-        status: Execution status of nodes.
-        created_at: Timestamp when the state was created.
-        updated_at: Timestamp when the state was last updated.
+        data: Global data shared across workflow
+        results: Node-specific results
+        errors: Error messages by node ID
+        status: Node execution status
+        parallel_tasks: Currently running parallel tasks
+        metadata: Additional workflow metadata
+        created_at: Time of state creation
+        updated_at: Time of last state modification
     """
-
-    results: Dict[str, Any] = Field(default_factory=dict)
     data: Dict[str, Any] = Field(default_factory=dict)
+    results: Dict[str, Dict[str, Any]] = Field(default_factory=dict)
     errors: Dict[str, str] = Field(default_factory=dict)
     status: Dict[str, NodeStatus] = Field(default_factory=dict)
+    parallel_tasks: Set[str] = Field(default_factory=set)
+    metadata: Dict[str, Any] = Field(default_factory=dict)
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
 
-    @classmethod
-    def _get_nested_value(cls, data: Dict[str, Any], dotted_key: str) -> Any:
-        """
-        Retrieve a nested value from data or results using a dotted key path.
-
-        Args:
-            data: The data dictionary to search.
-            dotted_key: The dotted key path.
-
-        Returns:
-            The value found at the specified key path.
-
-        Raises:
-            ValueError: If the key path does not exist in the data.
-        """
-        parts = dotted_key.split('.')
-        current = data
-        for part in parts:
-            if not isinstance(current, dict) or part not in current:
-                raise ValueError(f"Key '{part}' not found while traversing '{dotted_key}'")
-            current = current[part]
-        return current
-
-    @model_validator(mode='after')
-    def update_timestamp(self) -> 'NodeState':
-        self.updated_at = datetime.utcnow()
-        return self
-
     def mark_status(self, node_id: str, status: NodeStatus) -> None:
+        """Mark a node's execution status."""
         self.status[node_id] = status
+        self._update_timestamp()
 
     def add_parallel_task(self, node_id: str) -> None:
-        self.mark_status(node_id, NodeStatus.RUNNING)
+        """Add a node to the set of parallel tasks."""
+        self.parallel_tasks.add(node_id)
+        self._update_timestamp()
 
     def remove_parallel_task(self, node_id: str) -> None:
-        if node_id in self.status:
-            self.status[node_id] = NodeStatus.COMPLETED
+        """Remove a node from the set of parallel tasks."""
+        self.parallel_tasks.discard(node_id)
+        self._update_timestamp()
 
     def get_result(self, node_id: str, key: str) -> Any:
+        """Get a specific result value for a node."""
         return self.results.get(node_id, {}).get(key)
 
     def set_result(self, node_id: str, key: str, value: Any) -> None:
+        """Set a specific result value for a node."""
         if node_id not in self.results:
             self.results[node_id] = {}
         self.results[node_id][key] = value
+        self._update_timestamp()
 
     def get_data(self, key: str) -> Any:
+        """Get a value from shared data."""
         return self.data.get(key)
 
     def set_data(self, key: str, value: Any) -> None:
+        """Set a value in shared data."""
         self.data[key] = value
+        self._update_timestamp()
 
     def add_error(self, node_id: str, error: str) -> None:
+        """Add an error message for a node."""
         self.errors[node_id] = error
+        self._update_timestamp()
 
     def get_nested_data(self, dotted_key: str) -> Any:
         """
@@ -221,62 +169,44 @@ class NodeState(BaseModel):
             raise ValueError(f"No results found for node '{node_id}'")
         return self._get_nested_value(self.results[node_id], dotted_key)
 
+    @classmethod
+    def _get_nested_value(cls, data: Dict[str, Any], dotted_key: str) -> Any:
+        """Get a nested dictionary value using a dotted key path."""
+        parts = dotted_key.split('.')
+        current = data
+        for part in parts:
+            if not isinstance(current, dict) or part not in current:
+                raise ValueError(f"Key '{part}' not found while traversing '{dotted_key}'")
+            current = current[part]
+        return current
 
-class StateManager:
+    def _update_timestamp(self) -> None:
+        """Update the last modified timestamp."""
+        object.__setattr__(self, "updated_at", datetime.utcnow())
+
+class StateManager(BaseModel):
     """
-    Manages state persistence and retrieval for NodeState objects.
-
-    By default, it stores states in an in-memory dictionary. For large or distributed
-    workflows, you can extend or override to connect to external systems.
-
-    Potential Checkpointing Strategies:
-        - Store NodeState in a Postgres or Supabase table
-        - Serialize to JSON and save in object storage
-        - Write to Redis for ephemeral caching
-
+    Manages persistence and retrieval of NodeState instances.
+    
     Attributes:
-        config: Optional configuration for the manager.
-        _states: In-memory dictionary of NodeStates keyed by string IDs.
+        config: Configuration for state management
+        states: In-memory storage of states
     """
-
-    def __init__(self, config: Optional[Dict[str, Any]] = None) -> None:
-        """
-        Initialize the StateManager.
-
-        Args:
-            config: Optional configuration dictionary.
-        """
-        self.config = config or {}
-        self._states: Dict[str, NodeState] = {}
+    config: Dict[str, Any] = Field(default_factory=dict)
+    states: Dict[str, NodeState] = Field(default_factory=dict)
 
     def create_state(self) -> NodeState:
-        """
-        Create a new, empty NodeState.
-
-        Returns:
-            A newly created NodeState object.
-        """
+        """Create a new NodeState instance."""
         return NodeState()
 
     def persist_state(self, key: str, state: NodeState) -> None:
-        """
-        Persist a NodeState under a given key. By default, only in memory.
-
-        Future expansions might store states in an external system or a file.
-        """
-        self._states[key] = state
+        """Store a state instance."""
+        self.states[key] = state
 
     def retrieve_state(self, key: str) -> Optional[NodeState]:
-        """
-        Retrieve a previously persisted NodeState by key.
-
-        Returns:
-            The NodeState if found, or None otherwise.
-        """
-        return self._states.get(key)
+        """Retrieve a stored state."""
+        return self.states.get(key)
 
     def clear_state(self, key: str) -> None:
-        """
-        Remove a persisted NodeState by key, if it exists.
-        """
-        self._states.pop(key, None) 
+        """Remove a persisted NodeState by key."""
+        self.states.pop(key, None) 

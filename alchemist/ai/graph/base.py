@@ -9,8 +9,14 @@ from typing import Dict, Any, Optional, Union, List, Set
 import logging
 import asyncio
 from datetime import datetime
+from pydantic import BaseModel, Field
 
-from alchemist.ai.base.logging import LogComponent
+from alchemist.ai.base.logging import (
+    AlchemistLoggingConfig, 
+    log_verbose, 
+    VerbosityLevel, 
+    LogComponent
+)
 from alchemist.ai.graph.state import NodeState, StateManager, NodeStatus
 from alchemist.ai.graph.config import GraphConfig
 from alchemist.ai.graph.nodes.base.node import Node
@@ -18,33 +24,34 @@ from alchemist.ai.graph.nodes.base.node import Node
 # Get logger for graph component
 logger = logging.getLogger(LogComponent.GRAPH.value)
 
-class Graph:
+class Graph(BaseModel):
     """
     Core graph system for composing agent workflows.
 
-    Key Features:
-        - Node management and validation
-        - State orchestration
-        - Graph composition (including subgraph support)
-        - Parallel execution
-        - Configuration-driven node setup
-
-    Usage:
-        - Create a Graph instance, add nodes, define entry points, and call run(entry_point).
+    Attributes:
+        nodes: Dictionary mapping node IDs to Node instances
+        entry_points: Dictionary mapping entry point names to starting node IDs
+        subgraphs: Dictionary of nested Graph instances
+        config: Graph-level configuration
+        state_manager: Manages state persistence and retrieval
+        logging_config: Controls verbosity and logging behavior
     """
+    nodes: Dict[str, Node] = Field(default_factory=dict)
+    entry_points: Dict[str, str] = Field(default_factory=dict)
+    subgraphs: Dict[str, "Graph"] = Field(default_factory=dict)
+    config: GraphConfig = Field(default_factory=GraphConfig)
+    state_manager: StateManager = Field(default_factory=StateManager)
+    logging_config: AlchemistLoggingConfig = Field(
+        default_factory=AlchemistLoggingConfig,
+        description="Controls verbosity for graph and node transitions"
+    )
 
-    def __init__(self, config: Optional[Dict[str, Any]] = None) -> None:
-        """
-        Initialize the Graph with optional configuration.
+    class Config:
+        arbitrary_types_allowed = True
 
-        Args:
-            config: A dictionary to configure the Graph. Passed to GraphConfig.from_dict().
-        """
-        self.nodes: Dict[str, Node] = {}
-        self.entry_points: Dict[str, str] = {}
-        self.subgraphs: Dict[str, "Graph"] = {}
-        self.config = GraphConfig.from_dict(config)
-        self.state_manager = StateManager(config)
+    def model_post_init(self, __context: Any) -> None:
+        """Configure logging after model initialization."""
+        logger.setLevel(self.logging_config.level)
 
     def add_node(self, node: Node) -> None:
         """
@@ -92,6 +99,19 @@ class Graph:
             raise ValueError(f"No node found with id '{node_id}'")
         self.entry_points[name] = node_id
         logger.info(f"Added entry point '{name}' at node: {node_id}")
+
+    def set_entry_point(self, node_id: str) -> None:
+        """
+        Convenience method to designate a single default entry point.
+
+        Args:
+            node_id: The ID of the node which will serve as the graph's primary entry point.
+        """
+        if node_id not in self.nodes:
+            raise ValueError(f"No node found with id '{node_id}'")
+        # Use 'default' or any standard name to hold the single entry point
+        self.entry_points["default"] = node_id
+        logger.info(f"Set default entry point to node: {node_id}")
 
     def compose(self, other: "Graph", entry_point: str, namespace: Optional[str] = None) -> None:
         """
@@ -158,29 +178,44 @@ class Graph:
 
     async def run(
         self,
-        entry_point: str,
+        entry_point: Optional[str] = None,
         state: Optional[NodeState] = None,
         state_key: Optional[str] = None
     ) -> NodeState:
         """
-        Execute the graph from the specified entry point.
+        Run the graph from a specified entry point.
 
-        This method iterates or awaits node execution. If a node is marked `parallel=True`,
-        it is processed in an asyncio task while the main flow continues to the next node.
+        This method:
+            1. Resolves the NodeState (creates or retrieves).
+            2. Validates the entry point node.
+            3. Iteratively processes each node until a terminal is reached or no next node.
+
+        Logging Details:
+            - At VERBOSE or DEBUG levels, logs transitions between nodes.
+            - At INFO level, logs only major steps.
 
         Args:
-            entry_point: The name of the entry point to start execution from.
-            state: An optional initial NodeState.
-            state_key: An optional identifier for persisting/retrieving state via StateManager.
+            entry_point: Name of the entry point (key in self.entry_points).
+            state: Optional existing NodeState.
+            state_key: Optional key for retrieving a stored state.
 
         Returns:
-            The final NodeState after the graph completes.
+            The final NodeState after execution.
         """
-        if entry_point not in self.entry_points:
-            raise ValueError(f"No entry point named '{entry_point}'")
+        if state is None:
+            state = NodeState()
 
-        state = self._get_or_create_state(state, state_key)
+        # Use "default" if no entry_point specified
+        entry_point = entry_point or "default"
+        
+        if entry_point not in self.entry_points:
+            raise ValueError(f"No entry point found: {entry_point}")
+        
         start_node_id = self.entry_points[entry_point]
+
+        if self.logging_config.show_node_transitions or \
+           self.logging_config.level <= VerbosityLevel.DEBUG:
+            log_verbose(logger, f"Starting graph at node '{start_node_id}'")
 
         try:
             current_node_id: Optional[str] = start_node_id
@@ -224,6 +259,8 @@ class Graph:
         """
         Process a single node, handle any errors, and return the ID of the next node (if any).
 
+        At VERBOSE or DEBUG levels, logs node status changes.
+
         Args:
             node: The node to process.
             state: The current NodeState.
@@ -231,10 +268,14 @@ class Graph:
         Returns:
             The ID of the next node or None if the flow ends.
         """
+        # Log node start
+        state.mark_status(node.id, NodeStatus.RUNNING)
+        if self.logging_config.show_node_transitions or \
+           self.logging_config.level <= VerbosityLevel.DEBUG:
+            log_verbose(logger, f"Node '{node.id}' status: RUNNING")
+
         try:
             logger.debug(f"Processing node: {node.id}")
-            state.mark_status(node.id, NodeStatus.RUNNING)
-
             next_node_id = await node.process(state)
 
             if state.status[node.id] != NodeStatus.TERMINAL:

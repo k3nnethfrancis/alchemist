@@ -30,7 +30,7 @@ Example:
 """
 
 import logging
-from typing import List, Any
+from typing import List, Any, Optional
 from pydantic import BaseModel, Field
 import inspect
 
@@ -45,7 +45,7 @@ from openpipe import OpenAI as OpenPipeClient
 from alchemist.ai.prompts.base import create_system_prompt, PersonaConfig
 from alchemist.ai.prompts.persona import BASE_ASSISTANT
 from alchemist.ai.tools.calculator import CalculatorTool
-from alchemist.ai.base.logging import LogComponent
+from alchemist.ai.base.logging import LogComponent, AlchemistLoggingConfig, log_verbose, VerbosityLevel
 
 # Get logger for agent component
 logger = logging.getLogger(LogComponent.AGENT.value)
@@ -70,6 +70,7 @@ class BaseAgent(BaseModel):
         history: List of conversation messages (BaseMessageParam)
         persona: Configuration for agent's personality and behavior
         tools: List of available tool classes (not instances)
+        logging_config: Logging configuration for controlling verbosity
     """
     
     history: List[BaseMessageParam] = Field(
@@ -83,6 +84,10 @@ class BaseAgent(BaseModel):
     tools: List[type[BaseTool]] = Field(
         default_factory=list,
         description="List of tool classes available to the agent"
+    )
+    logging_config: AlchemistLoggingConfig = Field(
+        default_factory=AlchemistLoggingConfig,
+        description="Controls the verbosity and detail of agent logs."
     )
 
     @openai.call("gpt-4o-mini", client=OpenPipeClient())
@@ -127,6 +132,10 @@ class BaseAgent(BaseModel):
         - Results are formatted correctly
         - Recursive steps handle follow-up responses
         
+        Logging Details:
+            - At VERBOSE or DEBUG levels, logs conversation messages and tool calls.
+            - At INFO level, logs only high-level steps.
+        
         Args:
             query: User input or empty string for follow-up steps
             
@@ -135,12 +144,23 @@ class BaseAgent(BaseModel):
         """
         if query:
             self.history.append(BaseMessageParam(role="user", content=query))
+            if self.logging_config.show_llm_messages or \
+               self.logging_config.level <= VerbosityLevel.DEBUG:
+                log_verbose(logger, f"Added user query to history: {query}")
             
         response = self._call(query)
         self.history.append(response.message_param)
         
+        if self.logging_config.show_llm_messages or \
+           self.logging_config.level <= VerbosityLevel.DEBUG:
+            log_verbose(logger, f"Agent LLM response: {response.content}")
+        
         tools_and_outputs = []
         if tools := response.tools:
+            if self.logging_config.show_tool_calls or \
+               self.logging_config.level <= VerbosityLevel.DEBUG:
+                log_verbose(logger, f"Tools to call: {tools}")
+            
             for tool in tools:
                 logger.info(f"[Calling Tool '{tool._name()}' with args {tool.args}]")
                 

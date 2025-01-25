@@ -1,26 +1,87 @@
-"""Logging Configuration
-
-This module provides centralized logging configuration for the Alchemist system.
-Allows easy toggling of different logging levels for different components.
-"""
+"""Logging Configuration with pretty formatting for Alchemist."""
 
 import logging
 from typing import Optional, Dict, Any
-from enum import Enum
+from enum import Enum, IntEnum
 import json
 from datetime import datetime
 from pathlib import Path
+from pydantic import BaseModel, Field
 
-# Log format presets
-DEFAULT_FORMAT = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-DEBUG_FORMAT = "%(asctime)s - %(name)s - %(levelname)s - %(filename)s:%(lineno)d - %(message)s"
-SIMPLE_FORMAT = "%(levelname)s: %(message)s"
+# ANSI Color Codes
+class Colors:
+    """ANSI color codes for pretty terminal output."""
+    HEADER = '\033[95m'      # Pink
+    INFO = '\033[94m'        # Blue
+    SUCCESS = '\033[92m'     # Green
+    WARNING = '\033[93m'     # Yellow
+    ERROR = '\033[91m'       # Red
+    RESET = '\033[0m'        # Reset
+    BOLD = '\033[1m'         # Bold
+    DIM = '\033[2m'          # Dim
+    ITALIC = '\033[3m'       # Italic
+    UNDERLINE = '\033[4m'    # Underline
+
+# Pretty format strings
+PRETTY_FORMAT = (
+    "%(asctime)s │ %(levelname)-8s │ %(message)s"
+)
+
+DETAILED_FORMAT = (
+    f"{Colors.DIM}%(asctime)s{Colors.RESET} │ "
+    f"%(colored_level)-40s │ "
+    f"%(message)s"
+)
+
+class PrettyFormatter(logging.Formatter):
+    """Custom formatter with colors and symbols."""
+    
+    level_colors = {
+        'DEBUG': (Colors.DIM, '🔍'),
+        'INFO': (Colors.INFO, 'ℹ️'),
+        'WARNING': (Colors.WARNING, '⚠️'),
+        'ERROR': (Colors.ERROR, '❌'),
+        'CRITICAL': (Colors.ERROR + Colors.BOLD, '🚨')
+    }
+
+    def format(self, record):
+        # Add colored level with symbol
+        color, symbol = self.level_colors.get(record.levelname, (Colors.RESET, '•'))
+        record.colored_level = f"{color}{symbol} {record.levelname}{Colors.RESET}"
+        
+        # Format the message
+        message = super().format(record)
+        
+        # Add separator line for errors and warnings
+        if record.levelno >= logging.WARNING:
+            message = f"{message}\n{Colors.DIM}{'─' * 80}{Colors.RESET}"
+            
+        return message
+
+class PrettyLogHandler(logging.StreamHandler):
+    """Handler that adds pretty formatting to log records."""
+    
+    def emit(self, record):
+        try:
+            # Add timestamp formatting
+            record.asctime = datetime.fromtimestamp(record.created).strftime('%H:%M:%S')
+            
+            # Format and print
+            msg = self.format(record)
+            print(msg)
+            
+            # Add spacing after certain types of messages
+            if record.levelno >= logging.WARNING:
+                print()
+                
+        except Exception as e:
+            print(f"{Colors.ERROR}Error in logging: {e}{Colors.RESET}")
 
 class LogFormat(str, Enum):
     """Predefined log formats."""
-    DEFAULT = DEFAULT_FORMAT
-    DEBUG = DEBUG_FORMAT
-    SIMPLE = SIMPLE_FORMAT
+    DEFAULT = PRETTY_FORMAT
+    DEBUG = DETAILED_FORMAT
+    SIMPLE = PRETTY_FORMAT
 
 class LogComponent(str, Enum):
     """Components that can be logged.
@@ -47,58 +108,96 @@ class LogLevel(int, Enum):
     ERROR = logging.ERROR
     CRITICAL = logging.CRITICAL
 
+class VerbosityLevel(IntEnum):
+    """
+    Custom verbosity levels for more granular control.
+    Matches or extends standard Python logging levels:
+        - 10 => DEBUG
+        - 15 => VERBOSE (optional custom level)
+        - 20 => INFO
+    """
+    DEBUG = logging.DEBUG
+    VERBOSE = 15  # Custom lower-than-INFO level if desired
+    INFO = logging.INFO
+    WARNING = logging.WARNING
+    ERROR = logging.ERROR
+    CRITICAL = logging.CRITICAL
+
+logging.addLevelName(VerbosityLevel.VERBOSE, "VERBOSE")
+
+class AlchemistLoggingConfig(BaseModel):
+    """
+    Pydantic model for configuring logging verbosity.
+
+    Attributes:
+        level: The main log level (DEBUG, VERBOSE, INFO, etc.).
+        show_llm_messages: Whether to display full LLM messages in logs.
+        show_tool_calls: Whether to display tool call details.
+        show_node_transitions: Whether to display graph node transitions in logs.
+    """
+    level: VerbosityLevel = Field(default=VerbosityLevel.INFO)
+    show_llm_messages: bool = Field(default=False)
+    show_tool_calls: bool = Field(default=False)
+    show_node_transitions: bool = Field(default=False)
+
+def log_verbose(logger: logging.Logger, message: str) -> None:
+    """
+    Custom helper to log messages at our VERBOSE level.
+    
+    Args:
+        logger: The logger to use.
+        message: The message to log.
+    """
+    if logger.isEnabledFor(VerbosityLevel.VERBOSE):
+        logger.log(VerbosityLevel.VERBOSE, message)
+
 def configure_logging(
     default_level: LogLevel = LogLevel.INFO,
     component_levels: Optional[Dict[LogComponent, LogLevel]] = None,
-    format_string: str = DEFAULT_FORMAT,
-    log_file: Optional[str] = None,
-    enable_json: bool = False
+    pretty: bool = True,
+    log_file: Optional[str] = None
 ) -> None:
-    """Configure logging for all components.
+    """Configure logging with pretty formatting.
     
     Args:
-        default_level: Default logging level for all components
-        component_levels: Optional dict of component-specific levels
-        format_string: Format string for log messages
-        log_file: Optional file path to write logs to
-        enable_json: Whether to enable JSON formatting for logs
+        default_level: Default logging level
+        component_levels: Optional component-specific levels
+        pretty: Whether to use pretty formatting (default: True)
+        log_file: Optional file path for logging
     """
+    # Set up handlers
     handlers = []
     
-    # Console handler
-    console_handler = logging.StreamHandler()
-    console_handler.setFormatter(logging.Formatter(format_string))
+    # Console handler with pretty formatting
+    console_handler = PrettyLogHandler() if pretty else logging.StreamHandler()
+    console_handler.setFormatter(
+        PrettyFormatter(DETAILED_FORMAT if pretty else PRETTY_FORMAT)
+    )
     handlers.append(console_handler)
     
-    # File handler if specified
+    # File handler if specified (without colors)
     if log_file:
-        log_path = Path(log_file)
-        log_path.parent.mkdir(parents=True, exist_ok=True)
         file_handler = logging.FileHandler(log_file)
-        file_handler.setFormatter(logging.Formatter(format_string))
+        file_handler.setFormatter(logging.Formatter(PRETTY_FORMAT))
         handlers.append(file_handler)
     
-    # Set up root logger
+    # Configure root logger
     root_logger = logging.getLogger()
     root_logger.setLevel(default_level.value)
     
-    # Remove existing handlers and add new ones
+    # Clear existing handlers
     for handler in root_logger.handlers[:]:
         root_logger.removeHandler(handler)
+        
+    # Add new handlers
     for handler in handlers:
         root_logger.addHandler(handler)
     
-    # Configure component-specific levels
+    # Configure component levels
     if component_levels:
         for component, level in component_levels.items():
             logger = logging.getLogger(component.value)
             logger.setLevel(level.value)
-            if enable_json:
-                for handler in logger.handlers[:]:
-                    logger.removeHandler(handler)
-                json_handler = JsonLogHandler()
-                json_handler.setFormatter(logging.Formatter(format_string))
-                logger.addHandler(json_handler)
 
 class JsonLogHandler(logging.Handler):
     """Handler that formats log records as JSON."""
