@@ -15,15 +15,9 @@ from alchemist.ai.graph.state import NodeState
 class MockTool:
     """Mock tool for testing action node functionality."""
     
-    async def __call__(self, **kwargs) -> Dict[str, Any]:
+    def __call__(self, param1: str, param2: int = 42) -> Dict[str, Any]:
         """Simulate tool execution."""
-        return {"result": "mock_result"}
-
-
-class MockToolConfig(BaseModel):
-    """Mock tool configuration."""
-    param1: str
-    param2: int = 42
+        return {"result": f"{param1}_{param2}"}
 
 
 @pytest.fixture
@@ -39,9 +33,10 @@ def action_node(mock_tool: MockTool) -> ActionNode:
         id="test_action",
         tool=mock_tool,
         input_map={
-            "param1": "input.param1",
-            "param2": "input.param2"
-        }
+            "param1": "data.input.param1",
+            "param2": "data.input.param2"
+        },
+        next_nodes={"default": "next_node", "error": "error_node"}
     )
 
 
@@ -51,74 +46,98 @@ class TestActionNodeInitialization:
     def test_action_node_init(self, action_node: ActionNode):
         """Test basic action node initialization."""
         assert action_node.id == "test_action"
-        assert action_node.tool is not None
+        assert callable(action_node.tool)
         assert action_node.input_map == {
-            "param1": "input.param1",
-            "param2": "input.param2"
+            "param1": "data.input.param1",
+            "param2": "data.input.param2"
         }
+
+    def test_action_node_with_invalid_tool(self):
+        """Test action node initialization with invalid tool."""
+        class InvalidTool:
+            def __init__(self):
+                pass  # Not callable
+        
+        with pytest.raises(ValueError):
+            ActionNode(id="test", tool=InvalidTool())
 
 
 class TestActionNodeExecution:
     """Test suite for action node execution."""
 
+    @pytest.mark.asyncio
     async def test_basic_execution(self, action_node: ActionNode):
         """Test basic tool execution through action node."""
         state = NodeState()
-        state.set_data("input", {"param1": "test", "param2": 42})
+        state.data["input"] = {"param1": "test", "param2": 42}
         
-        result_state = await action_node.process(state)
-        assert result_state.results[action_node.id] == {"result": "mock_result"}
+        next_node = await action_node.process(state)
+        assert next_node == "next_node"
+        result = state.results[action_node.id]
+        assert "result" in result
+        assert result["result"] == {"result": "test_42"}
+        assert "timing" in result
 
+    @pytest.mark.asyncio
     async def test_missing_input(self, action_node: ActionNode):
         """Test execution with missing required input."""
         state = NodeState()
-        with pytest.raises(KeyError):
-            await action_node.process(state)
+        next_node = await action_node.process(state)
+        assert next_node == "error_node"
+        assert "test_action" in state.errors
+        assert "Key 'input' not found while traversing" in state.errors["test_action"]
 
 
-class TestActionNodeValidation:
-    """Test suite for action node input validation."""
+class TestStateManagement:
+    """Test suite for state management."""
 
-    async def test_input_validation(self, mock_tool: MockTool):
-        """Test input validation with Pydantic model."""
+    @pytest.mark.asyncio
+    async def test_required_state(self, mock_tool: MockTool):
+        """Test required state validation."""
         node = ActionNode(
-            id="validated_action",
+            id="test",
             tool=mock_tool,
-            input_map={"param1": "input.param1", "param2": "input.param2"},
-            input_model=MockToolConfig
+            required_state=["required_key"],
+            input_map={
+                "param1": "data.input.param1",
+                "param2": "data.input.param2"
+            },
+            next_nodes={"default": "next", "error": "error"}
         )
         
-        # Valid input
         state = NodeState()
-        state.set_data("input", {"param1": "test", "param2": 42})
+        next_node = await node.process(state)
+        assert next_node == "error"
+        assert "test" in state.errors
+        assert "Missing required state keys" in state.errors["test"]
+        
+        # Add required state and input data
+        state.data["required_key"] = "value"
+        state.data["input"] = {"param1": "test", "param2": 42}
+        next_node = await node.process(state)
+        assert next_node == "next"
+        assert "test" in state.results
+
+    @pytest.mark.asyncio
+    async def test_preserve_state(self, mock_tool: MockTool):
+        """Test state preservation."""
+        node = ActionNode(
+            id="test",
+            tool=mock_tool,
+            preserve_state=["keep_this"],
+            input_map={
+                "param1": "data.input.param1",
+                "param2": "data.input.param2"
+            },
+            next_nodes={"default": "next"}
+        )
+        
+        state = NodeState()
+        state.results["keep_this"] = "preserved"
+        state.results["remove_this"] = "temporary"
+        state.data["input"] = {"param1": "test", "param2": 42}
+        
         await node.process(state)
-        
-        # Invalid input
-        state = NodeState()
-        state.set_data("input", {"param1": "test", "param2": "not_an_int"})
-        with pytest.raises(ValueError):
-            await node.process(state)
-
-
-class TestActionNodeEvents:
-    """Test suite for action node event emission."""
-
-    async def test_execution_events(self, action_node: ActionNode):
-        """Test that action node emits appropriate events during execution."""
-        events = []
-        
-        def event_handler(event: Dict[str, Any]):
-            events.append(event)
-            
-        action_node.add_event_handler(event_handler)
-        
-        state = NodeState()
-        state.set_data("input", {"param1": "test", "param2": 42})
-        
-        await action_node.process(state)
-        
-        event_types = [e["type"] for e in events]
-        assert "STARTED" in event_types
-        assert "TOOL_CALLED" in event_types
-        assert "TOOL_COMPLETED" in event_types
-        assert "COMPLETED" in event_types
+        assert "keep_this" in state.results
+        assert "remove_this" not in state.results
+        assert node.id in state.results

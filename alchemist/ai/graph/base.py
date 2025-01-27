@@ -162,6 +162,12 @@ class Graph(BaseModel):
         """
         errors: List[str] = []
 
+        # Check for empty graph
+        if not self.nodes:
+            errors.append("Graph has no nodes")
+            return errors
+
+        # Check each node's validation and references
         for node_id, node in self.nodes.items():
             if not node.validate():
                 errors.append(f"Node {node_id} failed validation")
@@ -170,11 +176,42 @@ class Graph(BaseModel):
                 if next_id and next_id not in self.nodes:
                     errors.append(f"Node {node_id} references unknown node: {next_id}")
 
+        # Check entry points
         for name, node_id in self.entry_points.items():
             if node_id not in self.nodes:
                 errors.append(f"Entry point '{name}' references unknown node: {node_id}")
 
+        # Check for disconnected nodes
+        if self.nodes:
+            connected_nodes = set()
+            for entry_point in self.entry_points.values():
+                self._find_connected_nodes(entry_point, connected_nodes)
+
+            disconnected = set(self.nodes.keys()) - connected_nodes
+            if disconnected:
+                errors.append(f"Disconnected nodes found: {', '.join(disconnected)}")
+
         return errors
+
+    def _find_connected_nodes(self, start_node_id: str, connected: set) -> None:
+        """
+        Recursively find all nodes connected to the start node.
+        
+        Args:
+            start_node_id: ID of the node to start from
+            connected: Set to store connected node IDs
+        """
+        if start_node_id in connected:
+            return
+        
+        connected.add(start_node_id)
+        node = self.nodes.get(start_node_id)
+        if not node:
+            return
+            
+        for next_id in node.next_nodes.values():
+            if next_id:
+                self._find_connected_nodes(next_id, connected)
 
     async def run(
         self,

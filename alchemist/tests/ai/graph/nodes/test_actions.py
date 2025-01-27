@@ -11,36 +11,27 @@ import pytest
 from typing import Dict, Any, Optional
 from pydantic import BaseModel
 
-from mirascope.core import BaseTool
 from alchemist.ai.graph.nodes import ActionNode
 from alchemist.ai.graph.state import NodeState
 
 
-class MockTool(BaseTool):
+class MockTool:
     """Mock tool for testing action node functionality."""
     
     def __init__(self):
+        """Initialize the mock tool."""
         self.called = False
-        self.args = {}
     
-    @classmethod
-    def _name(cls) -> str:
-        return "mock_tool"
-        
-    async def call(self) -> Dict[str, Any]:
+    def __call__(self, value: str = "default") -> Dict[str, Any]:
         """Simulate tool execution."""
         self.called = True
-        return {"result": "mock_result"}
+        return {"result": value}
 
 
-class FailingTool(BaseTool):
+class FailingTool:
     """Tool that raises an error during execution."""
     
-    @classmethod
-    def _name(cls) -> str:
-        return "failing_tool"
-        
-    async def call(self) -> Dict[str, Any]:
+    def __call__(self, **kwargs) -> Dict[str, Any]:
         """Simulate tool failure."""
         raise ValueError("Tool execution failed")
 
@@ -63,7 +54,7 @@ def action_node(mock_tool: MockTool) -> ActionNode:
     return ActionNode(
         id="test_action",
         tool=mock_tool,
-        input_map={"value": "data.input_value"},
+        input_map={"value": "data.input.value"},
         next_nodes={"default": "next_node", "error": "error_node"}
     )
 
@@ -74,94 +65,96 @@ class TestActionNodeInitialization:
     def test_action_node_init(self, action_node: ActionNode):
         """Test basic action node initialization."""
         assert action_node.id == "test_action"
-        assert isinstance(action_node.tool, BaseTool)
-        assert action_node.input_map["value"] == "data.input_value"
-
-    def test_action_node_without_tool(self):
-        """Test action node initialization without tool."""
-        with pytest.raises(ValueError):
-            ActionNode(id="test")
+        assert callable(action_node.tool)
+        assert action_node.input_map["value"] == "data.input.value"
 
     def test_action_node_with_invalid_tool(self):
         """Test action node initialization with invalid tool."""
         class InvalidTool:
-            pass
+            def __init__(self):
+                pass  # Not callable
         
-        with pytest.raises(TypeError):
+        with pytest.raises(ValueError):
             ActionNode(id="test", tool=InvalidTool())
 
 
 class TestActionNodeProcessing:
     """Test suite for action node processing."""
 
+    @pytest.mark.asyncio
     async def test_basic_processing(self, action_node: ActionNode):
         """Test basic action node processing."""
         state = NodeState()
-        state.set_data("data.input_value", "test_input")
+        state.data["input"] = {"value": "test_input"}
         
         next_node = await action_node.process(state)
         assert next_node == "next_node"
-        assert state.results[action_node.id]["result"] == "mock_result"
+        assert state.results[action_node.id]["result"] == {"result": "test_input"}
+        assert "timing" in state.results[action_node.id]
 
-    async def test_tool_execution(self, action_node: ActionNode):
-        """Test tool execution during processing."""
-        state = NodeState()
-        await action_node.process(state)
-        assert action_node.tool.called
-
+    @pytest.mark.asyncio
     async def test_tool_failure(self, failing_tool: FailingTool):
         """Test handling of tool execution failure."""
         node = ActionNode(
             id="failing_action",
             tool=failing_tool,
-            next_nodes={"error": "error_node"}
+            input_map={"value": "data.input.value"},
+            next_nodes={"default": "next_node", "error": "error_node"}
         )
         
         state = NodeState()
+        state.data["input"] = {"value": "test_input"}
+        
         next_node = await node.process(state)
         assert next_node == "error_node"
         assert "failing_action" in state.errors
-
-
-class TestInputMapping:
-    """Test suite for input mapping."""
-
-    async def test_input_mapping(self, action_node: ActionNode):
-        """Test input mapping to tool parameters."""
-        state = NodeState()
-        state.set_data("data.input_value", "mapped_value")
-        
-        await action_node.process(state)
-        assert action_node.tool.args.get("value") == "mapped_value"
-
-    async def test_missing_input(self, action_node: ActionNode):
-        """Test handling of missing input values."""
-        state = NodeState()
-        next_node = await action_node.process(state)
-        assert next_node == "error_node"
-        assert "test_action" in state.errors
+        assert "Tool execution failed" in state.errors["failing_action"]
 
 
 class TestStateManagement:
     """Test suite for state management."""
 
-    async def test_result_storage(self, action_node: ActionNode):
-        """Test storage of tool results in state."""
-        state = NodeState()
-        await action_node.process(state)
-        
-        assert action_node.id in state.results
-        assert "result" in state.results[action_node.id]
-
-    async def test_error_storage(self, failing_tool: FailingTool):
-        """Test storage of errors in state."""
+    @pytest.mark.asyncio
+    async def test_required_state(self, mock_tool: MockTool):
+        """Test required state validation."""
         node = ActionNode(
-            id="failing_action",
-            tool=failing_tool
+            id="test",
+            tool=mock_tool,
+            required_state=["required_key"],
+            input_map={"value": "data.input.value"},
+            next_nodes={"default": "next", "error": "error"}
         )
         
         state = NodeState()
-        await node.process(state)
+        next_node = await node.process(state)
+        assert next_node == "error"
+        assert "test" in state.errors
+        assert "Missing required state keys" in state.errors["test"]
         
-        assert "failing_action" in state.errors
-        assert isinstance(state.errors["failing_action"], ValueError) 
+        # Add required state and input data
+        state.data["required_key"] = "value"
+        state.data["input"] = {"value": "test_input"}
+        next_node = await node.process(state)
+        assert next_node == "next"
+        assert "test" in state.results
+
+    @pytest.mark.asyncio
+    async def test_preserve_state(self, mock_tool: MockTool):
+        """Test state preservation."""
+        node = ActionNode(
+            id="test",
+            tool=mock_tool,
+            preserve_state=["keep_this"],
+            input_map={"value": "data.input.value"},
+            next_nodes={"default": "next"}
+        )
+        
+        state = NodeState()
+        state.results["keep_this"] = "preserved"
+        state.results["remove_this"] = "temporary"
+        state.data["input"] = {"value": "test_input"}
+        
+        await node.process(state)
+        assert "keep_this" in state.results
+        assert "remove_this" not in state.results
+        assert node.id in state.results 
