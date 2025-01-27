@@ -79,3 +79,6 @@ docs/_build/
 
 # generated files
 channels.json
+
+# examples
+examples/graph/wisdom_workflow.py

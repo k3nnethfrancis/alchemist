@@ -37,10 +37,12 @@ import asyncio
 import logging
 from typing import Dict, Any, Optional, List, Callable
 from pydantic import Field, model_validator
+from datetime import datetime
 
 from alchemist.ai.base.logging import get_logger, LogComponent
 from alchemist.ai.graph.nodes.base.node import Node
 from alchemist.ai.graph.state import NodeState, NodeStatus
+from alchemist.ai.base.logging import Colors
 
 logger = get_logger(LogComponent.NODES)
 
@@ -95,37 +97,24 @@ class ActionNode(Node):
         return self
 
     async def process(self, state: NodeState) -> Optional[str]:
-        """
-        Execute the action and handle state management.
-
-        1. Validate required_state.
-        2. Gather parameters from state using input_map (and optionally args_key).
-        3. Call the tool (sync or async).
-        4. Store result in state.results[node.id][output_key].
-        5. Optionally preserve or clean state results.
-        6. Mark node status and return next node.
-
-        Args:
-            state: The current NodeState.
-
-        Returns:
-            str: The ID of the next node to execute, or "error" if an exception occurs.
-        """
+        """Execute the action and handle state management."""
         try:
+            start_time = datetime.now()
+            state.mark_status(self.id, NodeStatus.RUNNING)
+            
+            # Log start of action
+            logger.debug(f"\n{Colors.BOLD}🔧 Node {self.id} Starting:{Colors.RESET}")
+            
             self._validate_required_state(state)
-
-            # Prepare input data from base Node logic
             inputs = self._prepare_input_data(state)
-
-            # If args_key is defined, we can inject it into inputs for more advanced patterns
+            
+            # Handle args_key if present
             if self.args_key:
                 if self.args_key in state.results:
                     inputs.update(state.results[self.args_key])
                 elif self.args_key in state.data:
-                    # Possibly user stored tool args in state.data
                     if isinstance(state.data[self.args_key], dict):
                         inputs.update(state.data[self.args_key])
-                # else do nothing if it's missing; user can handle logic
 
             # Execute the tool
             if asyncio.iscoroutinefunction(self.tool):
@@ -133,12 +122,26 @@ class ActionNode(Node):
             else:
                 result = self.tool(**inputs)
 
-            # Store the result
-            state.results[self.id] = {self.output_key: result}
+            # Store results with timing
+            elapsed = (datetime.now() - start_time).total_seconds()
+            state.results[self.id] = {
+                self.output_key: result,
+                "timing": elapsed
+            }
 
-            # Optionally preserve state
+            # Log completion with results
+            logger.info(
+                f"\n{Colors.SUCCESS}✓ Node '{self.id}' completed in {elapsed:.2f}s{Colors.RESET}"
+                f"\n{Colors.DIM}{'─' * 40}{Colors.RESET}"
+                f"\n{Colors.INFO}{result}{Colors.RESET}"
+                f"\n{Colors.DIM}{'─' * 40}{Colors.RESET}\n"
+            )
+
+            # Handle callbacks
+            if "on_complete" in self.metadata:
+                await self.metadata["on_complete"](state, self.id)
+
             self._cleanup_state(state)
-
             state.mark_status(self.id, NodeStatus.COMPLETED)
             return self.get_next_node()
 
