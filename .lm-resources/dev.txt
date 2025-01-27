@@ -16,16 +16,17 @@ alchemist/
 │   │   │   ├── logging.py         # Centralized logging system [DONE]  
 │   │   │   └── runtime.py         # Environment management [DONE]  
 │   │   ├── graph/                  # [CORE - IN PROGRESS ~85%]  
-│   │   │   ├── base.py            # Core graph framework and orchestration  
-│   │   │   ├── state.py           # State and context management  
-│   │   │   ├── config.py          # Graph-level configuration  
+│   │   │   ├── base.py            # Core graph framework  
+│   │   │   ├── state.py           # State management  
+│   │   │   ├── config.py          # Graph configuration  
+│   │   │   ├── viz.py             # Graph visualization [NEW]
 │   │   │   └── nodes/  
 │   │   │       ├── base/          # Base node implementations  
 │   │   │       │   ├── node.py    # Abstract base node [DONE]  
-│   │   │       │   ├── llm.py     # LLM node implementation [DONE]  
-│   │   │       │   └── tool.py    # Simple tool wrapper node [DONE]  
-│   │   │       ├── actions.py     # Enhanced tool node w/ checks & hooks [DONE]  
-│   │   │       └── context.py     # Context management node(s) [IN PROGRESS]  
+│   │   │       ├── actions.py     # Enhanced action node [DONE]  
+│   │   │       ├── agent.py       # Agent node implementation [DONE]  
+│   │   │       ├── context.py     # Context management [IN PROGRESS]  
+│   │   │       └── terminal.py    # Terminal node [DONE]  
 │   │   ├── prompts/               # [CORE]  
 │   │   │   ├── base.py           # Core prompt templates [DONE]  
 │   │   │   └── persona.py        # Agent persona definitions [DONE]  
@@ -34,20 +35,22 @@ alchemist/
 │   │       ├── discord_tool.py    # Discord integration tool [COMPLETE]  
 │   │       └── image.py           # Image generation tool [TESTED]  
 │   ├── core/  
-│   │   ├── extensions/            # Platform integrations  
-│   │   │   ├── config.py         # Extension configuration [DONE]  
-│   │   │   └── discord/          # [COMPLETE]  
-│   │   │       ├── client.py     # Discord bot client  
-│   │   │       └── runtime.py    # Discord-specific runtime environment  
-│   │   └── logger.py             # Centralized logging (alternative to base/logging.py) [DONE]  
+│   │   └── extensions/            # Platform integrations  
+│   │       └── environments/      # Environment-specific code
+│   │           └── discord/       # [COMPLETE]  
+│   │               ├── client.py  # Discord bot client  
+│   │               └── runtime.py # Discord runtime environment  
 │   └── tests/                     # Test suite  
-│       ├── ai/  
-│       │   ├── base/             # Core agent tests [DONE]  
-│       │   ├── graph/            # Graph system tests [IN PROGRESS]  
-│       │   └── tools/            # Tool implementation tests [DONE]  
-│       └── core/  
-│           ├── extensions/       # Platform integration tests [DONE]  
-│           └── mirascope/       # Mirascope integration tests [DONE]  
+│       └── ai/  
+│           └── graph/            # Graph system tests [IN PROGRESS]  
+│               ├── nodes/        # Node implementation tests
+│               │   ├── test_action_node.py
+│               │   ├── test_base_node.py
+│               │   ├── test_llm_node.py
+│               │   └── test_tool_node.py
+│               ├── test_base.py
+│               ├── test_config.py
+│               └── test_state.py
 └── examples/                      # Example implementations  
     ├── discord/                   # Discord bot examples  
     │   ├── chatbot.py  
@@ -69,12 +72,16 @@ Alchemist is built around two major subsystems:
    - Agents can call tools, maintain conversation state, and either perform single-call (`_call`) or step-based (`_step`) interactions.  
    - We use Pydantic for data validation and docstrings to clearly specify usage.  
 
-2. **Graph System** (in alchemist/ai/graph/):  
-   - Provides a workflow framework for chaining together nodes that may call LLMs, tools, or context managers.
-   - The `Graph` (base.py) orchestrates node execution, parallelization, and stateful transitions.
-   - Nodes use input_map for explicit data mapping from NodeState, supporting nested key lookups.
-   - Built-in support for workflow patterns like chaining, looping, and terminal nodes.
-   - All nodes are validated via Pydantic models and use async processing.
+2. **Graph System** (in alchemist/ai/graph/):
+   - Now includes standardized event emission system for real-time monitoring
+   - Enhanced logging system with color-coded output for different node states
+   - Supports both synchronous and asynchronous tool execution
+   - Improved state management with dotted notation for data access
+   - Built-in support for:
+     * Input validation via Pydantic
+     * Detailed logging of node execution steps
+     * State preservation and cleanup
+     * Callback hooks for node completion
 
 Information flows like this:  
 1. An Agent receives user input.
@@ -99,11 +106,10 @@ Information flows like this:
    - Both the agent calls and the node processes are async to accommodate external I/O.  
 
 4. **State Management & Data Mapping**
-   - The Graph tracks results and shared data in a NodeState object.
-   - Nodes use input_map to explicitly declare and validate their data requirements.
-   - Support for nested key lookups (e.g., "request.user.name") in NodeState.
-   - Built-in TerminalNode for workflow completion.
-   - Loop detection and controlled repetition of workflow segments.
+   - Enhanced dotted notation support (e.g., "node.previous.result" or "data.user.preferences")
+   - Standardized event emission for frontend integration
+   - Color-coded logging for better visibility
+   - Automatic timing and performance tracking
 
 5. **Workflow Patterns**
    - Chain utility for simple sequential node connections.
@@ -111,60 +117,68 @@ Information flows like this:
    - Loop control for repeated execution of workflow segments.
    - Built-in terminal nodes for clean workflow completion.
 
-6. **Extensions**  
+6. **Node Types**
+   - ActionNode: Enhanced tool execution with state preservation
+   - AgentNode: LLM integration with Mirascope
+   - ContextNode: External data injection (placeholder for memory system)
+   - TerminalNode: Clean workflow completion
+
+7. **Extensions**  
    - The core/ directory contains platform-specific integrations (e.g., Discord), bots, and runtimes.  
 
 ---
 
-## 4. Development Status & Roadmap
+## 4. Immediate Priorities & Roadmap
 
-### 4.1 Current Status
+1. **Core Agent Enhancements**
+   - Add streaming support to BaseAgent
+   - Integrate memory system into BaseAgent
+   - Enhance tool calling system
+     * Parallel tool execution
+     * Better error handling
+     * Tool result validation
+     * Tool chaining patterns
 
-• Agent System:  
-  - BaseAgent is fully operational, integrated with tools, tested, and uses Mirascope provider-agnostic calls.  
-  - Logging is centralized in either `base/logging.py` or `core/logger.py`.  
+2. **Graph System Improvements**
+   - Implement callback system
+     * Node lifecycle events
+     * Tool execution events
+     * Error events
+     * Performance metrics
+   - Add parallel node execution
+   - Implement subgraph support
+     * Nested workflow composition
+     * State inheritance
+     * Error bubbling
 
-• Graph System (~85% Complete):  
-  - We have base Graph (state, config) and node types (LLMNode, ToolNode, ActionNode).  
-  - Parallel execution in base.py, plus partial subgraph logic.  
-  - ContextNode is partially implemented to handle external context (e.g., time, memory).  
+3. **Testing & Reliability**
+   - Rebuild test suite from scratch
+   - Add comprehensive test cases:
+     * Agent streaming
+     * Tool parallelization
+     * Graph callbacks
+     * Memory integration
+     * Error scenarios
+   - Add integration tests
+   - Add performance benchmarks
 
-• Tools (calculator, image, Discord integration):  
-  - All tested or completed.  
-  - Tools are straightforward function calls or asynchronous calls.  
+4. **Package Completion**
+   - Improve documentation
+   - Add more usage examples
+   - Create quickstart guide
+   - Add deployment guides
+   - Create contribution guidelines
 
-• Extensions:  
-  - Discord integration is stable.  
-  - Config-based channel management done.  
-
-• Examples:  
-  - Some graph usage examples exist (analysis_workflow, newsletter_workflow).  
-  - More thorough usage examples are in progress.  
-
-### 4.2 Roadmap / Next Steps
-
-1. **Context Management**  
-   - Finalize ContextNode for memory/time/facts injection.  
-   - Provide a consistent interface for external data fetch and injection into NodeState.  
-
-2. **Checkpointing & Persistence**  
-   - Use StateManager's "persist_state" method, but extend to external storage (e.g., Supabase).  
-   - This will allow long-running flows to recover from interruptions.  
-
-3. **Memory System**  
-   - Introduce or unify with the context approach so that agent queries can pull relevant historical data.  
-   - We plan to integrate Supabase with a memory library (RAG-style retrieval).  
-
-4. **Subgraph & Parallel Workflows**  
-   - Enhance the base Graph for nested subgraphs.  
-   - Improve concurrency or parallel node execution.  
-
-5. **Advanced Error Handling**  
-   - Introduce retry logic, fallback nodes, or specialized "error" pathways.  
-
-6. **Documentation & Testing**  
-   - Expand test coverage for context, memory, parallel node flows.  
-   - Provide end-to-end examples in "examples/graph/."  
+5. **Extensions & Examples**
+   - Add Twitter integration
+   - Create new agent examples:
+     * Research agent
+     * Writing agent
+     * Analysis agent
+   - Add more tools:
+     * Web search
+     * Document processing
+     * Data analysis
 
 ---
 

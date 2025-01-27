@@ -9,7 +9,6 @@ import logging
 import re
 import asyncio
 
-from alchemist.core.logger import log_step, log_run
 from alchemist.ai.prompts.base import PersonaConfig
 from alchemist.ai.base.logging import LogComponent
 
