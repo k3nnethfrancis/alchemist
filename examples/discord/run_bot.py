@@ -16,7 +16,7 @@ from typing import Dict, List
 from aiohttp import web
 from dotenv import load_dotenv
 
-from alchemist.core.extensions.discord.runtime import DiscordRuntime, DiscordRuntimeConfig
+from alchemist.extensions.discord.runtime import DiscordRuntimeConfig, DiscordLocalRuntime
 
 # Configure logging
 logging.basicConfig(
@@ -26,28 +26,67 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 class DiscordBotService:
-    """Discord bot service for channel access."""
+    """Service that provides Discord bot functionality via HTTP endpoints."""
     
     def __init__(self):
-        """Initialize the bot service."""
+        """Initialize the Discord bot service."""
         self.runtime = None
         self.ready = asyncio.Event()
-        self.channels: Dict[str, str] = {}  # name -> id
-        self.categories: Dict[str, List[str]] = {}  # category -> [channel names]
+        self.channels = {}
+        self.categories = {}
         
+    async def _handle_message(self, message):
+        """Log incoming Discord messages."""
+        logger.info(f"[Discord] Message from {message.author.name}:")
+        logger.info(f"Content: {message.content}")
+        logger.info(f"Embeds: {message.embeds}")
+        
+    async def _update_channels(self):
+        """Update channel information from Discord."""
+        channel_info = await self.runtime.get_channels()
+        self.channels = channel_info["channels"]
+        self.categories = channel_info["categories"]
+        
+        # Log channel information
+        logger.info("\nAvailable channels by category:")
+        for category, channels in self.categories.items():
+            logger.info(f"\nCategory: {category}")
+            for channel in channels:
+                logger.info(f"  - #{channel}")
+    
+    async def handle_channels(self, request):
+        """Handle GET /channels request."""
+        return web.json_response({
+            "channels": self.channels,
+            "categories": self.categories
+        })
+    
+    async def handle_history(self, request):
+        """Handle GET /history/{channel_id} request."""
+        channel_id = request.match_info['channel_id']
+        limit = int(request.query.get('limit', 100))
+        
+        try:
+            history = await self.runtime.get_message_history(channel_id, limit)
+            return web.json_response(history)
+        except ValueError as e:
+            return web.json_response({"error": str(e)}, status=404)
+        except Exception as e:
+            return web.json_response({"error": str(e)}, status=500)
+    
     async def start(self):
         """Start the Discord runtime and HTTP server."""
         try:
             # Load environment variables
             load_dotenv()
-            token = os.getenv("DISCORD_READER_TOKEN")
+            token = os.getenv("DISCORD_BOT_TOKEN")
             if not token:
                 raise ValueError(
-                    "DISCORD_READER_TOKEN not found in environment. "
+                    "DISCORD_BOT_TOKEN not found in environment. "
                     "Please set it in your .env file."
                 )
                 
-            logger.info("Starting Discord reader bot...")
+            logger.info("Starting Discord bot...")
             
             # Configure Discord runtime
             runtime_config = DiscordRuntimeConfig(
@@ -55,7 +94,7 @@ class DiscordBotService:
                 channel_ids=["*"]  # Allow access to all channels
             )
             
-            self.runtime = DiscordRuntime(config=runtime_config)
+            self.runtime = DiscordLocalRuntime(config=runtime_config)
             
             # Add message handler for logging
             self.runtime.add_message_handler(self._handle_message)
@@ -98,76 +137,21 @@ class DiscordBotService:
             logger.error(f"Error starting service: {str(e)}")
             raise
     
-    async def _handle_message(self, message):
-        """Log incoming messages with full details."""
-        embed_info = []
-        for embed in message.embeds:
-            embed_data = {
-                "title": embed.title,
-                "description": embed.description,
-                "url": embed.url,
-                "fields": [{"name": f.name, "value": f.value} for f in embed.fields],
-                "footer": {"text": embed.footer.text} if embed.footer else None,
-                "author": {"name": embed.author.name} if embed.author else None,
-                "color": embed.color if embed.color else None,
-                "thumbnail": {"url": embed.thumbnail.url} if embed.thumbnail else None,
-                "image": {"url": embed.image.url} if embed.image else None
-            }
-            embed_info.append(embed_data)
-            
-        logger.info(
-            f"[Discord] Message from {message.author}:\n"
-            f"Content: {message.content}\n"
-            f"Embeds: {embed_info if embed_info else 'None'}"
-        )
-    
-    async def _update_channels(self):
-        """Update channel mappings from Discord."""
-        logger.info("Updating channel mappings...")
-        channels = await self.runtime.get_channels()
-        self.channels = channels["channels"]
-        self.categories = channels["categories"]
-        
-        # Log available channels
-        for category, channel_list in self.categories.items():
-            logger.info(f"\nCategory: {category}")
-            for channel in channel_list:
-                logger.info(f"  - #{channel}")
-    
-    async def handle_channels(self, request):
-        """Handle GET /channels request."""
-        logger.info("Handling /channels request")
-        return web.json_response({
-            "channels": self.channels,
-            "categories": self.categories
-        })
-    
-    async def handle_history(self, request):
-        """Handle GET /history/{channel_id} request."""
-        channel_id = request.match_info['channel_id']
-        limit = int(request.query.get('limit', 100))
-        
-        logger.info(f"Handling /history request for channel {channel_id} (limit: {limit})")
-        
-        try:
-            messages = await self.runtime.get_message_history(channel_id, limit)
-            logger.info(f"Found {len(messages)} messages")
-            return web.json_response({"messages": messages})
-        except ValueError as e:
-            logger.error(f"Channel not found: {str(e)}")
-            raise web.HTTPNotFound(text=str(e))
+    async def stop(self):
+        """Stop the Discord bot service."""
+        if self.runtime:
+            await self.runtime.stop()
 
-async def main():
+def main():
     """Run the Discord bot service."""
+    service = DiscordBotService()
+    
     try:
-        service = DiscordBotService()
-        await service.start()
-    except Exception as e:
-        logger.error(f"Error: {str(e)}")
-        raise
+        asyncio.run(service.start())
+    except KeyboardInterrupt:
+        logger.info("\nShutting down Discord bot service...")
+        asyncio.run(service.stop())
+        logger.info("Service stopped")
 
 if __name__ == "__main__":
-    try:
-        asyncio.run(main())
-    except KeyboardInterrupt:
-        print("\nDiscord reader bot service terminated by user.") 
+    main() 

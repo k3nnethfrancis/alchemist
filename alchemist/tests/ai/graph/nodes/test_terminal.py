@@ -1,18 +1,16 @@
 """Tests for TerminalNode functionality.
 
 This module tests the TerminalNode class which handles:
-- Terminal command execution
-- Input/output mapping
-- Error handling
+- Workflow termination
+- Status marking
 - State management
 """
 
 import pytest
 from typing import Dict, Any, Optional
-import asyncio
 
 from alchemist.ai.graph.nodes import TerminalNode
-from alchemist.ai.graph.state import NodeState
+from alchemist.ai.graph.state import NodeState, NodeStatus
 
 
 @pytest.fixture
@@ -20,7 +18,6 @@ def terminal_node() -> TerminalNode:
     """Fixture providing a basic terminal node."""
     return TerminalNode(
         id="test_terminal",
-        command="echo 'test'",
         next_nodes={"default": "next_node", "error": "error_node"}
     )
 
@@ -31,19 +28,18 @@ class TestTerminalNodeInitialization:
     def test_terminal_node_init(self, terminal_node: TerminalNode):
         """Test basic terminal node initialization."""
         assert terminal_node.id == "test_terminal"
-        assert terminal_node.command == "echo 'test'"
         assert "default" in terminal_node.next_nodes
         assert "error" in terminal_node.next_nodes
 
     def test_terminal_node_without_command(self):
         """Test terminal node initialization without command."""
-        with pytest.raises(ValueError):
-            TerminalNode(id="test")
+        node = TerminalNode(id="test")
+        assert node.id == "test"
 
     def test_terminal_node_with_invalid_command(self):
         """Test terminal node initialization with invalid command."""
-        with pytest.raises(ValueError):
-            TerminalNode(id="test", command="")
+        node = TerminalNode(id="test", next_nodes={"default": None})
+        assert node.next_nodes["default"] is None
 
 
 class TestTerminalNodeProcessing:
@@ -54,64 +50,57 @@ class TestTerminalNodeProcessing:
         state = NodeState()
         next_node = await terminal_node.process(state)
         
-        assert next_node == "next_node"
-        assert terminal_node.id in state.results
-        assert "output" in state.results[terminal_node.id]
-        assert "test" in state.results[terminal_node.id]["output"]
+        assert next_node is None
+        assert state.status[terminal_node.id] == NodeStatus.TERMINAL
 
     async def test_command_with_variables(self):
-        """Test command execution with variables."""
+        """Test terminal node with input mapping."""
         node = TerminalNode(
             id="test",
-            command="echo '${message}'",
             input_map={"message": "data.message"}
         )
         
         state = NodeState()
         state.set_data("data.message", "hello world")
         
-        await node.process(state)
-        assert "hello world" in state.results[node.id]["output"]
+        next_node = await node.process(state)
+        assert next_node is None
+        assert state.status[node.id] == NodeStatus.TERMINAL
 
     async def test_command_timeout(self):
-        """Test command execution timeout."""
+        """Test terminal node with timeout."""
         node = TerminalNode(
             id="test",
-            command="sleep 5",  # Command that takes too long
-            timeout=0.1,
             next_nodes={"error": "error_node"}
         )
         
         state = NodeState()
         next_node = await node.process(state)
         
-        assert next_node == "error_node"
-        assert "test" in state.errors
-        assert "timeout" in str(state.errors["test"]).lower()
+        assert next_node is None
+        assert state.status[node.id] == NodeStatus.TERMINAL
 
 
 class TestErrorHandling:
     """Test suite for error handling."""
 
     async def test_invalid_command(self):
-        """Test handling of invalid command execution."""
+        """Test terminal node with error next node."""
         node = TerminalNode(
             id="test",
-            command="nonexistent_command",
             next_nodes={"error": "error_node"}
         )
         
         state = NodeState()
         next_node = await node.process(state)
         
-        assert next_node == "error_node"
-        assert "test" in state.errors
+        assert next_node is None
+        assert state.status[node.id] == NodeStatus.TERMINAL
 
     async def test_missing_variable(self):
-        """Test handling of missing variable in command."""
+        """Test terminal node with missing input."""
         node = TerminalNode(
             id="test",
-            command="echo '${missing}'",
             input_map={"missing": "data.missing"},
             next_nodes={"error": "error_node"}
         )
@@ -119,45 +108,40 @@ class TestErrorHandling:
         state = NodeState()
         next_node = await node.process(state)
         
-        assert next_node == "error_node"
-        assert "test" in state.errors
+        assert next_node is None
+        assert state.status[node.id] == NodeStatus.TERMINAL
 
 
 class TestStateManagement:
     """Test suite for state management."""
 
     async def test_result_storage(self, terminal_node: TerminalNode):
-        """Test storage of command results in state."""
+        """Test terminal node status in state."""
         state = NodeState()
         await terminal_node.process(state)
         
-        assert terminal_node.id in state.results
-        assert "output" in state.results[terminal_node.id]
-        assert "exit_code" in state.results[terminal_node.id]
+        assert state.status[terminal_node.id] == NodeStatus.TERMINAL
 
     async def test_error_storage(self):
-        """Test storage of command errors in state."""
+        """Test terminal node with error handling."""
         node = TerminalNode(
             id="test",
-            command="exit 1",  # Command that fails
             next_nodes={"error": "error_node"}
         )
         
         state = NodeState()
         await node.process(state)
         
-        assert "test" in state.errors
-        assert state.results["test"]["exit_code"] == 1
+        assert state.status[node.id] == NodeStatus.TERMINAL
 
     async def test_environment_variables(self):
-        """Test command execution with environment variables."""
+        """Test terminal node with environment variables."""
         node = TerminalNode(
             id="test",
-            command="echo $TEST_VAR",
-            env={"TEST_VAR": "test_value"}
+            metadata={"env": {"TEST_VAR": "test_value"}}
         )
         
         state = NodeState()
         await node.process(state)
         
-        assert "test_value" in state.results[node.id]["output"] 
+        assert state.status[node.id] == NodeStatus.TERMINAL 

@@ -10,11 +10,11 @@ Features:
 import logging
 from openai import AsyncOpenAI
 from mirascope.core import BaseTool
-from pydantic import Field, BaseModel
+from pydantic import Field
 
 logger = logging.getLogger(__name__)
 
-class ImageGenerationTool(BaseTool, BaseModel):
+class ImageGenerationTool(BaseTool):
     """Tool for generating images using DALL-E 3.
     
     This tool uses OpenAI's DALL-E 3 model to generate images from text descriptions.

@@ -32,7 +32,7 @@ alchemist/
 │   │   │   └── persona.py        # Agent persona definitions [DONE]  
 │   │   └── tools/                 # [CORE]  
 │   │       ├── calculator.py      # Basic arithmetic tool [TESTED]  
-│   │       ├── discord_tool.py    # Discord integration tool [COMPLETE]  
+│   │       ├── discord_toolkit.py    # Discord integration tool [COMPLETE]  
 │   │       └── image.py           # Image generation tool [TESTED]  
 │   ├── core/  
 │   │   └── extensions/            # Platform integrations  

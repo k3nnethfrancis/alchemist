@@ -14,7 +14,7 @@ from mirascope.core import BaseTool
 
 from .calculator import CalculatorTool
 from .image import ImageGenerationTool
-from .discord_tool import DiscordTools
+from .discord_toolkit import DiscordTools
 
 __all__ = [
     "CalculatorTool",

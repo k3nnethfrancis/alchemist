@@ -157,7 +157,9 @@ class DiscordTools(BaseToolKit):
                         raise Exception(f"Failed to get messages: HTTP {response.status}")
                         
                     data = await response.json()
-                    messages = data.get("messages", [])
+                    
+                    # Handle both list and dict responses
+                    messages = data if isinstance(data, list) else data.get("messages", [])
                     
                     logger.info(f"📥 Received {len(messages)} messages")
                     # Log first message as example

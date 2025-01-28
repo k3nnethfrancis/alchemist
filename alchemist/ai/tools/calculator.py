@@ -5,13 +5,14 @@ It supports basic arithmetic operations (+, -, *, /), exponents (**),
 and parentheses for grouping.
 """
 
+import asyncio
 import logging
 from mirascope.core import BaseTool
-from pydantic import Field, BaseModel
+from pydantic import Field
 
 logger = logging.getLogger(__name__)
 
-class CalculatorTool(BaseTool, BaseModel):
+class CalculatorTool(BaseTool):
     """A simple calculator tool for basic arithmetic operations.
     
     This tool evaluates mathematical expressions using Python's eval() function.
@@ -51,4 +52,4 @@ class CalculatorTool(BaseTool, BaseModel):
             result = eval(self.expression)
             return str(result)
         except Exception as e:
-            return f"Error: {str(e)}" 
+            return f"Error: {str(e)}"

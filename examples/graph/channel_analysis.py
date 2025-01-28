@@ -20,7 +20,7 @@ from pydantic import BaseModel, Field
 
 from alchemist.ai.graph.base import Graph, NodeContext, NodeState, Node
 from alchemist.ai.graph.nodes.base import LLMNode
-from alchemist.ai.tools.discord_tool import DiscordTools
+from alchemist.ai.tools.discord_toolkit import DiscordTools
 from alchemist.ai.prompts.base import prompt_template
 
 # Set up logging

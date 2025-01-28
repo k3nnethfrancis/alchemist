@@ -1,129 +1,93 @@
 """Discord chatbot example.
 
-This example demonstrates a Discord bot that:
-1. Uses the DiscordRuntime for core functionality
-2. Implements a chat agent with tool support
-3. Responds to messages in configured channels
+This example demonstrates a simple Discord bot that:
+1. Uses a custom personality (Ken-E)
+2. Responds to messages in a configured channel
+3. Requires run_bot.py to be running first
+
+Usage:
+    1. Start the Discord service: python -m examples.discord.run_bot
+    2. Then run this chatbot: python -m examples.discord.chatbot
 """
 
 import os
-import sys
 import asyncio
-import logging
-from pathlib import Path
 from dotenv import load_dotenv
-
-# Add parent directory to path
-file = os.path.abspath(__file__)
-parent = os.path.dirname(os.path.dirname(os.path.dirname(file)))
-sys.path.insert(0, parent)
+import discord
 
 from alchemist.ai.prompts.persona import KEN_E
-from alchemist.core.extensions.discord.runtime import DiscordRuntimeConfig, DiscordRuntime
-from alchemist.ai.base.tools import CalculatorTool, ImageGenerationTool
-from alchemist.ai.base.runtime import RuntimeConfig, LocalRuntime
+from alchemist.extensions.discord.runtime import DiscordRuntimeConfig, DiscordChatRuntime
+from alchemist.ai.base.runtime import RuntimeConfig
 
-# Configure logging
-log_dir = Path("logs")
-log_dir.mkdir(exist_ok=True)
-
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.FileHandler(log_dir / "discord_bot.log"),
-        logging.StreamHandler()
-    ]
-)
-
-logger = logging.getLogger(__name__)
-
-class DiscordChatbot:
-    """Discord chatbot with tool support."""
+async def handle_message(message: discord.Message, runtime: DiscordChatRuntime):
+    """Handle incoming Discord messages.
     
-    def __init__(self, token: str, channel_ids: list[str]):
-        """Initialize the chatbot.
+    Args:
+        message: The Discord message to process
+        runtime: The Discord runtime instance
+    """
+    # Only process messages in configured channels
+    if str(message.channel.id) not in runtime.config.channel_ids:
+        return
         
-        Args:
-            token: Discord bot token
-            channel_ids: List of channel IDs to monitor
-        """
-        # Configure Discord runtime
-        discord_config = DiscordRuntimeConfig(
-            bot_token=token,
-            channel_ids=channel_ids,
-            platform_config={
-                "image_channel": True  # Enable image responses
-            }
-        )
-        self.discord = DiscordRuntime(config=discord_config)
+    # Only process messages that mention the bot
+    if not message.mentions or runtime.client.user not in message.mentions:
+        return
         
-        # Configure chat runtime
-        chat_config = RuntimeConfig(
-            provider="openpipe",
-            model="gpt-4o-mini",
-            persona=KEN_E,
-            tools=[CalculatorTool, ImageGenerationTool]
-        )
-        self.chat = LocalRuntime(config=chat_config)
+    # Remove the bot mention from the message
+    content = message.content.replace(f'<@{runtime.client.user.id}>', '').strip()
+    
+    try:
+        # Process the message using the runtime's process_message method
+        response = await runtime.process_message(content)
         
-    async def start(self):
-        """Start the chatbot."""
-        # Add message handler
-        self.discord.add_message_handler(self.handle_message)
-        
-        # Start both runtimes
-        await self.chat.start()
-        await self.discord.start()
-        
-    async def stop(self):
-        """Stop the chatbot."""
-        await self.discord.stop()
-        
-    async def handle_message(self, message):
-        """Handle incoming Discord messages."""
-        logger.info(f"[Discord] Message from {message.author}: {message.content}")
-        
-        try:
-            # Get response from chat runtime
-            response = await self.chat.chat(message.content)
-            
-            # Send response back to Discord
-            await message.channel.send(response)
-            
-        except Exception as e:
-            logger.error(f"Error handling message: {str(e)}")
-            await message.channel.send("Sorry, I encountered an error processing your message.")
+        # Send the response back to Discord
+        await message.channel.send(response)
+    except Exception as e:
+        print(f"Error processing message: {str(e)}")
+        await message.channel.send("Sorry, I encountered an error processing your message.")
 
 async def main():
     """Run the Discord chatbot."""
-    try:
-        # Load environment variables
-        load_dotenv()
-        token = os.getenv("DISCORD_BOT_TOKEN")
-        if not token:
-            logger.error("DISCORD_BOT_TOKEN not set in .env file")
-            sys.exit(1)
-        
-        # Create and start chatbot
-        chatbot = DiscordChatbot(
-            token=token,
-            channel_ids=["1318659602115592204"]  # agent-sandbox channel
+    # Load environment variables
+    load_dotenv()
+    token = os.getenv("DISCORD_BOT_TOKEN")
+    if not token:
+        print("Error: DISCORD_BOT_TOKEN not set in .env file")
+        return
+
+    # Configure Discord runtime with both Discord and runtime configs
+    discord_config = DiscordRuntimeConfig(
+        bot_token=token,
+        channel_ids=["1318659602115592204"],  # agent-sandbox channel
+        runtime_config=RuntimeConfig(
+            provider="openpipe",
+            model="openpipe:ken0-llama31-8B-instruct",
+            persona=KEN_E,
+            platform_config={
+                "prompt_prefix": "You: ",
+                "response_prefix": "Assistant: "
+            }
         )
-        
-        logger.info("Starting Discord chatbot...")
-        await chatbot.start()
-        
-        # Keep the bot running
-        try:
-            await asyncio.Future()  # run forever
-        except KeyboardInterrupt:
-            logger.info("Shutting down...")
-            await chatbot.stop()
-            
-    except Exception as e:
-        logger.error(f"Error in Discord bot: {str(e)}", exc_info=True)
-        sys.exit(1)
+    )
+    
+    # Create and start Discord runtime
+    runtime = DiscordChatRuntime(config=discord_config)
+    
+    # Add message handler
+    runtime.add_message_handler(lambda msg: handle_message(msg, runtime))
+    
+    # Start the runtime
+    await runtime.start()
+
+    print("\nDiscord chatbot running with Ken-0 model!")
+    print("Press Ctrl+C to exit")
+
+    try:
+        await asyncio.Future()  # run forever
+    except KeyboardInterrupt:
+        await runtime.stop()
+        print("\nChatbot stopped")
 
 if __name__ == "__main__":
     asyncio.run(main()) 

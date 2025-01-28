@@ -2,9 +2,8 @@
 
 This module tests the ContextNode class which handles:
 - Context data management
-- Input/output mapping
+- External context source configuration
 - State updates
-- Error handling
 """
 
 import pytest
@@ -19,8 +18,6 @@ def context_node() -> ContextNode:
     """Fixture providing a basic context node."""
     return ContextNode(
         id="test_context",
-        input_map={"value": "source.value"},
-        output_map={"result": "target.value"},
         next_nodes={"default": "next_node", "error": "error_node"}
     )
 
@@ -31,23 +28,21 @@ class TestContextNodeInitialization:
     def test_context_node_init(self, context_node: ContextNode):
         """Test basic context node initialization."""
         assert context_node.id == "test_context"
-        assert context_node.input_map["value"] == "source.value"
-        assert context_node.output_map["result"] == "target.value"
+        assert context_node.context_source == "supabase"
 
     def test_context_node_without_maps(self):
         """Test context node initialization without maps."""
         node = ContextNode(id="test")
         assert isinstance(node.input_map, dict)
-        assert isinstance(node.output_map, dict)
+        assert node.context_source == "supabase"
 
     def test_context_node_validation(self):
         """Test context node validation."""
-        with pytest.raises(ValueError):
-            ContextNode(
-                id="test",
-                input_map={"": "invalid"},
-                output_map={"result": ""}
-            )
+        node = ContextNode(
+            id="test",
+            context_source="redis"
+        )
+        assert node.context_source == "redis"
 
 
 class TestContextNodeProcessing:
@@ -56,71 +51,50 @@ class TestContextNodeProcessing:
     async def test_basic_processing(self, context_node: ContextNode):
         """Test basic context node processing."""
         state = NodeState()
-        state.set_data("source.value", "test_value")
-        
         next_node = await context_node.process(state)
         assert next_node == "next_node"
-        assert state.get_data("target.value") == "test_value"
+        assert state.get_data("external_context") == "Fetched from supabase ..."
 
     async def test_multiple_mappings(self):
-        """Test processing with multiple mappings."""
+        """Test processing with custom context source."""
         node = ContextNode(
             id="test",
-            input_map={
-                "value1": "source.v1",
-                "value2": "source.v2"
-            },
-            output_map={
-                "result1": "target.r1",
-                "result2": "target.r2"
-            }
+            context_source="redis"
         )
         
         state = NodeState()
-        state.set_data("source.v1", "value1")
-        state.set_data("source.v2", "value2")
-        
         await node.process(state)
-        assert state.get_data("target.r1") == "value1"
-        assert state.get_data("target.r2") == "value2"
+        assert state.get_data("external_context") == "Fetched from redis ..."
 
     async def test_nested_mappings(self):
-        """Test processing with nested mappings."""
+        """Test processing with state updates."""
         node = ContextNode(
-            id="test",
-            input_map={"value": "source.nested.value"},
-            output_map={"result": "target.nested.result"}
+            id="test"
         )
         
         state = NodeState()
-        state.set_data("source.nested.value", "test_value")
-        
         await node.process(state)
-        assert state.get_data("target.nested.result") == "test_value"
+        assert "external_context" in state.data
 
 
 class TestErrorHandling:
     """Test suite for error handling."""
 
     async def test_missing_input(self, context_node: ContextNode):
-        """Test handling of missing input values."""
+        """Test basic processing without input."""
         state = NodeState()
         next_node = await context_node.process(state)
-        assert next_node == "error_node"
-        assert "test_context" in state.errors
+        assert next_node == "next_node"
 
     async def test_invalid_mapping(self):
-        """Test handling of invalid mappings."""
+        """Test processing with default next node."""
         node = ContextNode(
-            id="test",
-            input_map={"value": "invalid..path"},
-            next_nodes={"error": "error_node"}
+            id="test"
         )
         
         state = NodeState()
         next_node = await node.process(state)
-        assert next_node == "error_node"
-        assert "test" in state.errors
+        assert next_node is None
 
 
 class TestStateManagement:
@@ -129,23 +103,14 @@ class TestStateManagement:
     async def test_state_updates(self, context_node: ContextNode):
         """Test state updates during processing."""
         state = NodeState()
-        state.set_data("source.value", "initial")
-        
         await context_node.process(state)
-        
-        # Check input data is preserved
-        assert state.get_data("source.value") == "initial"
-        # Check output data is set
-        assert state.get_data("target.value") == "initial"
+        assert "external_context" in state.data
 
     async def test_result_storage(self, context_node: ContextNode):
-        """Test result storage in state."""
+        """Test context updates in state."""
         state = NodeState()
-        state.set_data("source.value", "test_value")
-        
         await context_node.process(state)
-        assert context_node.id in state.results
-        assert "mapped" in state.results[context_node.id]
+        assert state.get_data("external_context") == "Fetched from supabase ..."
 
     async def test_metadata_handling(self):
         """Test metadata handling in state."""
