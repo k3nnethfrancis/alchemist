@@ -83,11 +83,14 @@ class BaseChatRuntime(BaseRuntime):
         """Process a single message and return the response."""
         if not self.current_session:
             self._start_session(platform="chat")
-        # Handle both async and sync _step methods
-        response = self.agent._step(message)
-        if asyncio.iscoroutine(response):
-            response = await response
-        return response
+        try:
+            # Always await the _step method since it's async
+            response = await self.agent._step(message)
+            logger.debug(f"Agent response: {response}")  # Add debug logging
+            return response
+        except Exception as e:
+            logger.exception("Error processing message")  # Log the full traceback
+            raise
 
 class LocalRuntime(BaseChatRuntime):
     """Runtime for local console chat interactions."""

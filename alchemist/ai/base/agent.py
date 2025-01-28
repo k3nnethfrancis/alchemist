@@ -197,9 +197,12 @@ class BaseAgent(BaseModel):
             query = input("(User): ")
             if query.lower() in ["exit", "quit"]:
                 break
-            print("(Assistant): ", end="", flush=True)
+                
+            # Get the result first before printing anything
             result = await self._step(query)
-            print(result)
+            
+            # Print the assistant's message all at once
+            print(f"(Assistant): {result}")
 
 # Main execution block for direct script usage
 if __name__ == "__main__":

@@ -1,22 +1,8 @@
-"""Example of creating an agent with tool integration.
-
-This example demonstrates using BaseAgent for tool-driven tasks:
-1. Using built-in tools (Calculator)
-2. Creating custom tools (Weather)
-3. Combining multiple tools in one agent
-4. Handling tool execution and results
-
-Best for:
-- Tool integration
-- Custom tool creation
-- Multi-tool agents
-- Task-specific automation
-"""
+"""Example of creating a basic tool use agent with a custom tool"""
 
 import asyncio
 from typing import Dict, Any
-from pydantic import BaseModel, Field
-
+from pydantic import Field
 from mirascope.core import BaseTool
 from alchemist.ai.base.agent import BaseAgent
 from alchemist.ai.prompts.base import PersonaConfig
@@ -27,10 +13,7 @@ from alchemist.ai.tools.calculator import CalculatorTool
 class WeatherTool(BaseTool):
     """Tool for looking up weather information."""
     
-    city: str = Field(
-        ...,
-        description="The city to look up weather for"
-    )
+    city: str = Field(...,description="The city to look up weather for")
     
     @classmethod
     def _name(cls) -> str:
@@ -56,8 +39,7 @@ TOOL_ASSISTANT = {
     "id": "tool-assistant-v1",
     "name": "ToolGPT",
     "nickname": "Tool",
-    "bio": """I am an assistant that demonstrates tool usage.
-I can help with calculations and weather lookups.""",
+    "bio": """I am an assistant that demonstrates tool usage. I can help with calculations and weather lookups.""",
     "personality": {
         "traits": {
             "neuroticism": 0.2,      # Stable and reliable
@@ -115,27 +97,8 @@ async def main():
         persona=PersonaConfig(**TOOL_ASSISTANT),
         tools=[CalculatorTool, WeatherTool]  # Combine built-in and custom tools
     )
-    
-    print("\nInitialized Tool Assistant")
-    print("I can help you with calculations and weather lookups.")
-    print("\nAvailable tools:")
-    print("1. Calculator - Perform mathematical calculations")
-    print("2. Weather - Look up weather for a city")
-    print("\nTry asking:")
-    print("- What is 123 * 456?")
-    print("- What's the weather in San Francisco?")
-    print("- Can you calculate 15% of 85?")
-    print("\nType 'exit' or 'quit' to end")
-    print("-" * 50)
-    
-    while True:
-        query = input("\nYou: ")
-        if query.lower() in ["exit", "quit"]:
-            break
-            
-        # Execute with tool support
-        result = await agent._step(query)
-        print(f"\nAssistant: {result}")
+
+    await agent.run()
 
 if __name__ == "__main__":
     asyncio.run(main()) 
