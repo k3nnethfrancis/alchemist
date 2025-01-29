@@ -1,7 +1,12 @@
-"""Base Agent implementation using Mirascope's agent patterns.
+"""
+BaseAgent rewritten to accept a system prompt, removing direct persona references.
 
-This module implements a flexible agent architecture using Mirascope's decorator pattern.
-It uses OpenPipe for LLM calls, supports tool integration, and maintains conversation history.
+This module provides a provider-agnostic base class for AI Agents using Mirascope.
+It handles:
+ - Session state
+ - Tool usage
+ - Asynchronous calls
+ - Prompt composition (system + conversation + user)
 
 Message Flow:
     1. User input is received and added to history
@@ -30,7 +35,7 @@ Example:
 """
 
 import logging
-from typing import List, Any, Optional
+from typing import List, Any, Optional, Union
 from pydantic import BaseModel, Field
 import inspect
 
@@ -39,16 +44,47 @@ from mirascope.core import (
     BaseTool,
     BaseDynamicConfig,
     openai,
+    Messages,
+    prompt_template,
 )
 from openpipe import OpenAI as OpenPipeClient
-
-from alchemist.ai.prompts.base import create_system_prompt, PersonaConfig
-from alchemist.ai.prompts.persona import BASE_ASSISTANT
 from alchemist.ai.tools.calculator import CalculatorTool
 from alchemist.ai.base.logging import LogComponent, AlchemistLoggingConfig, log_verbose, VerbosityLevel
 
 # Get logger for agent component
 logger = logging.getLogger(LogComponent.AGENT.value)
+
+@prompt_template()
+def create_system_prompt(config: BaseModel) -> list[BaseMessageParam]:
+    """Creates a formatted system prompt from a Pydantic model.
+    
+    Args:
+        config: A Pydantic model containing system prompt configuration
+        
+    Returns:
+        list[BaseMessageParam]: List containing the formatted system message
+    """
+    def format_value(value: Any) -> str:
+        if isinstance(value, list):
+            return "\n".join(f"- {item}" for item in value)
+        elif isinstance(value, dict):
+            return "\n".join(f"- {k}: {v}" for k, v in value.items())
+        elif isinstance(value, BaseModel):
+            return format_model(value)
+        return str(value)
+
+    def format_model(model: BaseModel) -> str:
+        sections = []
+        for field_name, field_value in model.model_dump().items():
+            field_title = field_name.replace('_', ' ').title()
+            formatted_value = format_value(field_value)
+            sections.append(f"{field_title}: {formatted_value}")
+        return "\n\n".join(sections)
+
+    content = format_model(config)
+    logger.debug(f"[create_system_prompt] Formatted content:\n{content}")
+    
+    return [BaseMessageParam(role="system", content=content)]
 
 class BaseAgent(BaseModel):
     """Base agent class implementing core agent functionality with persona support and tools.
@@ -68,7 +104,7 @@ class BaseAgent(BaseModel):
     
     Attributes:
         history: List of conversation messages (BaseMessageParam)
-        persona: Configuration for agent's personality and behavior
+        system_prompt: System prompt or Pydantic model for agent configuration
         tools: List of available tool classes (not instances)
         logging_config: Logging configuration for controlling verbosity
     """
@@ -77,10 +113,7 @@ class BaseAgent(BaseModel):
         default_factory=list,
         description="Conversation history"
     )
-    persona: PersonaConfig = Field(
-        default_factory=lambda: PersonaConfig(**BASE_ASSISTANT),
-        description="Persona configuration for the agent"
-    )
+    system_prompt: Optional[Union[str, BaseModel]] = None
     tools: List[type[BaseTool]] = Field(
         default_factory=list,
         description="List of tool classes available to the agent"
@@ -95,7 +128,7 @@ class BaseAgent(BaseModel):
         """Make an OpenPipe API call with the current conversation state.
         
         This method prepares the messages for the API call by:
-        1. Creating a system message from the persona
+        1. Creating a system message from the system_prompt
         2. Including the full conversation history
         3. Adding the current query if present
         4. Providing available tools to the model
@@ -106,13 +139,25 @@ class BaseAgent(BaseModel):
         Returns:
             BaseDynamicConfig: Contains messages and available tools
         """
+        # Create system message based on type
+        if isinstance(self.system_prompt, BaseModel):
+            system_messages = create_system_prompt(self.system_prompt)
+        else:
+            system_messages = [BaseMessageParam(role="system", 
+                                             content=self.system_prompt or "")]
+            
         messages = [
-            BaseMessageParam(role="system", content=create_system_prompt(self.persona)),
-            *self.history,
-            BaseMessageParam(role="user", content=query) if query else None,
+            *system_messages,
+            *self.history
         ]
-        messages = [m for m in messages if m is not None]
-        return {"messages": messages, "tools": self.tools}
+        
+        if query:
+            messages.append(BaseMessageParam(role="user", content=query))
+            
+        return {
+            "messages": messages,
+            "tools": self.tools
+        }
 
     async def _step(self, query: str) -> str:
         """Execute a single step of agent interaction.
