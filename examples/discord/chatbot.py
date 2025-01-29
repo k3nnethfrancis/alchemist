@@ -64,10 +64,6 @@ async def main():
             provider="openpipe",
             model="openpipe:ken0-llama31-8B-instruct",
             persona=KEN_E,
-            platform_config={
-                "prompt_prefix": "You: ",
-                "response_prefix": "Assistant: "
-            }
         )
     )
     
