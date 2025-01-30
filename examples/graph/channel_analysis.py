@@ -18,10 +18,10 @@ from datetime import datetime, timedelta
 
 from pydantic import BaseModel, Field
 
-from alchemist.ai.graph.base import Graph, NodeContext, NodeState, Node
+from alchemist.ai.graph.base import Graph, NodeState, Node
 from alchemist.ai.graph.nodes.base import LLMNode
 from alchemist.ai.tools.discord_toolkit import DiscordTools
-from alchemist.ai.prompts.base import prompt_template
+from mirascope.core import prompt_template
 
 # Set up logging
 logging.basicConfig(level=logging.DEBUG)
@@ -74,10 +74,12 @@ class ChannelCollectorNode(Node):
             state.errors[self.id] = str(e)
             return None
 
-@prompt_template
-def analysis_prompt(messages: str) -> str:
+@prompt_template()
+def analysis_prompt(messages: str) -> list[BaseMessageParam]:
     """Template for analyzing Discord messages."""
-    return """Analyze the following Discord messages and provide a summary:
+    return [BaseMessageParam(
+        role="user",
+        content=f"""Analyze the following Discord messages and provide a summary:
 
 Messages:
 {messages}
@@ -89,6 +91,7 @@ Please provide:
 4. Notable trends or patterns
 
 Format your response in markdown."""
+    )]
 
 class ChannelAnalysisNode(LLMNode):
     """Analyzes collected Discord messages."""
