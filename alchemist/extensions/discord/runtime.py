@@ -16,7 +16,7 @@ import discord
 from pydantic import BaseModel, Field
 
 from alchemist.extensions.discord.client import DiscordClient
-from alchemist.ai.base.runtime import BaseChatRuntime, RuntimeConfig
+from alchemist.ai.base.runtime import BaseChatRuntime, RuntimeConfig, BaseAgent
 
 logger = logging.getLogger(__name__)
 
@@ -60,10 +60,21 @@ class DiscordRuntime(BaseChatRuntime):
         Args:
             config: Runtime configuration
         """
-        # Initialize base runtime if chat config provided
-        if config.runtime_config:
-            super().__init__(config.runtime_config)
-            
+        # Ensure a runtime_config is provided
+        if not config.runtime_config:
+            raise ValueError("runtime_config is required for DiscordRuntime")
+        
+        # Create the agent using the provided runtime configuration.
+        # You can use the _create_agent method from BaseChatRuntime,
+        # but here we directly instantiate BaseAgent with the configuration.
+        # Alternatively, if you have any custom logic, factor it in here.
+        agent = BaseAgent(
+            system_prompt=config.runtime_config.system_prompt,
+            tools=config.runtime_config.tools
+        )
+        # Call the base class initializer with the constructed agent.
+        super().__init__(agent=agent, config=config.runtime_config)
+        
         # Store Discord-specific config
         self.config = config
         self.client = DiscordClient(token=config.bot_token)

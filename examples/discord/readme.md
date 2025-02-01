@@ -1,13 +1,22 @@
-## discord bot examples with ...
+## Discord Bot Examples with Alchemist
 
-### how to run your discord bot
+### How to Run Your Discord Bot
 
-1. create a discord bot and get the token
-2. create a .env file in the root of the project and add the token to it
-3. run the bot with `python -m examples.discord.run_bot`
+1. Create a Discord bot and obtain the token.
+2. In the root of the project, create a `.env` file and set the token (DISCORD_BOT_TOKEN).
+3. Run the bot service with:  
+   `python -m examples.discord.run_bot`
 
-### how to run the chatbot
-4. open another terminal and run `python -m examples.discord.chatbot`
+### How to Run the Chatbot
 
-### (optional) run the local discord reader
-if you want to run a local runtime chatbot that can answer questions about your discord server, you can run `python -m examples.discord.local_reader_agent`
+4. Open another terminal and run the chatbot:  
+   `python -m examples.discord.chatbot`
+
+### (Optional) Run the Local Discord Reader
+
+If you want to run a local runtime chatbot that can answer questions about your Discord server, run:  
+`python -m examples.discord.local_reader_agent`
+
+---
+
+Note: These examples now use our new system prompt approach. Instead of a full persona, a simple validated prompt (via Pydantic) guides the agent's behavior.
