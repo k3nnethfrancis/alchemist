@@ -38,7 +38,7 @@ import logging
 from typing import List, Any, Optional, Union
 from pydantic import BaseModel, Field
 import inspect
-
+# import lilypad
 from mirascope.core import (
     BaseMessageParam,
     BaseTool,
@@ -53,6 +53,7 @@ from alchemist.ai.base.logging import LogComponent, AlchemistLoggingConfig, log_
 
 # Get logger for agent component
 logger = logging.getLogger(LogComponent.AGENT.value)
+
 
 @prompt_template()
 def create_system_prompt(config: BaseModel) -> list[BaseMessageParam]:
@@ -123,7 +124,9 @@ class BaseAgent(BaseModel):
         description="Controls the verbosity and detail of agent logs."
     )
 
+    # @lilypad.generation()
     @openai.call("gpt-4o-mini", client=OpenPipeClient())
+    # @openai.call("gpt-4o-mini")
     def _call(self, query: str) -> BaseDynamicConfig:
         """Make an OpenPipe API call with the current conversation state.
         
@@ -248,7 +251,6 @@ class BaseAgent(BaseModel):
             
             # Print the assistant's message all at once
             print(f"(Assistant): {result}")
-
 # Main execution block for direct script usage
 if __name__ == "__main__":
     import asyncio

@@ -9,8 +9,8 @@ import logging
 import re
 import asyncio
 
-from alchemist.ai.prompts.base import PersonaConfig
 from alchemist.ai.base.logging import LogComponent
+from alchemist.ai.base.agent import BaseAgent
 
 # Get logger for runtime component
 logger = logging.getLogger(LogComponent.RUNTIME.value)
@@ -23,26 +23,36 @@ class Session(BaseModel):
     agent_config: Dict[str, Any] = Field(default_factory=dict)
 
 class RuntimeConfig(BaseModel):
-    """Configuration for runtime environments."""
+    """Configuration for runtime environments.
+    
+    Attributes:
+        provider: The LLM provider to use (default: "openai")
+        model: The model to use (default: "gpt-4o-mini")
+        system_prompt: System prompt configuration as string or Pydantic model
+        tools: List of available tools
+        platform_config: Additional platform-specific configuration
+    """
     provider: str = "openai"
     model: str = "gpt-4o-mini"
-    persona: Union[Dict[str, Any], PersonaConfig]  # Accept either type
+    system_prompt: Union[str, BaseModel]
     tools: list = Field(default_factory=list)
     platform_config: Dict[str, Any] = Field(default_factory=dict)
-
-    @property
-    def persona_config(self) -> PersonaConfig:
-        """Ensure persona is always a PersonaConfig object."""
-        if isinstance(self.persona, dict):
-            return PersonaConfig(**self.persona)
-        return self.persona
 
 class BaseRuntime(ABC):
     """Abstract base for all runtime environments."""
     
-    def __init__(self, config: RuntimeConfig):
-        self.config = config
-        self.agent = self._create_agent()
+    def __init__(self, agent: BaseAgent, config: Optional[RuntimeConfig] = None) -> None:
+        """Initialize runtime with an agent instance.
+        
+        Args:
+            agent: Instance of BaseAgent or its subclasses
+            config: Optional runtime configuration
+        """
+        self.agent = agent
+        self.config = config or RuntimeConfig(
+            system_prompt=agent.system_prompt,
+            tools=agent.tools
+        )
         self.current_session = None
 
     @abstractmethod
@@ -73,9 +83,7 @@ class BaseChatRuntime(BaseRuntime):
         """Create agent instance."""
         from alchemist.ai.base.agent import BaseAgent
         return BaseAgent(
-            provider=self.config.provider,
-            model=self.config.model,
-            persona=self.config.persona_config,
+            system_prompt=self.config.system_prompt,  # Updated to use system_prompt
             tools=self.config.tools
         )
     
@@ -84,12 +92,11 @@ class BaseChatRuntime(BaseRuntime):
         if not self.current_session:
             self._start_session(platform="chat")
         try:
-            # Always await the _step method since it's async
             response = await self.agent._step(message)
-            logger.debug(f"Agent response: {response}")  # Add debug logging
+            logger.debug(f"Agent response: {response}")
             return response
         except Exception as e:
-            logger.exception("Error processing message")  # Log the full traceback
+            logger.exception("Error processing message")
             raise
 
 class LocalRuntime(BaseChatRuntime):

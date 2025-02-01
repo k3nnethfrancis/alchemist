@@ -19,9 +19,11 @@ from datetime import datetime, timedelta
 from pydantic import BaseModel, Field
 
 from alchemist.ai.graph.base import Graph, NodeState, Node
-from alchemist.ai.graph.nodes.base import LLMNode
+from alchemist.ai.graph.nodes import TerminalNode, AgentNode
 from alchemist.ai.tools.discord_toolkit import DiscordTools
-from mirascope.core import prompt_template
+from mirascope.core import prompt_template, BaseMessageParam
+from alchemist.ai.base.agent import BaseAgent
+from alchemist.ai.base.logging import AlchemistLoggingConfig, VerbosityLevel, Colors
 
 # Set up logging
 logging.basicConfig(level=logging.DEBUG)
@@ -93,7 +95,7 @@ Please provide:
 Format your response in markdown."""
     )]
 
-class ChannelAnalysisNode(LLMNode):
+class ChannelAnalysisNode(AgentNode):
     """Analyzes collected Discord messages."""
     
     id: str = "analyze"
@@ -205,41 +207,64 @@ class ResultFormatterNode(Node):
 async def main():
     """Run the channel analysis workflow."""
     
+    # Create graph with logging config
+    graph = Graph(
+        logging_config=AlchemistLoggingConfig(
+            level=VerbosityLevel.INFO,
+            show_llm_messages=True,
+            show_node_transitions=True,
+            show_tool_calls=True
+        )
+    )
+    
     # Create nodes
-    collector = ChannelCollectorNode(channel_name="ai-news")
-    analyzer = ChannelAnalysisNode()
-    formatter = ResultFormatterNode()
+    collector = ChannelCollectorNode(
+        id="collect",
+        channel_name="ai-news",
+        next_nodes={"default": "analyze"}
+    )
     
-    # Create graph
-    graph = Graph()
+    analyzer = AgentNode(  # Updated from LLMNode
+        id="analyze",
+        prompt_template=analysis_prompt,
+        agent=BaseAgent(),
+        input_map={"messages": "node.collect.messages"},
+        next_nodes={"default": "format"}
+    )
     
-    # Add nodes and edges
-    graph.add_node(collector)
-    graph.add_node(analyzer)
-    graph.add_node(formatter)
+    formatter = ResultFormatterNode(
+        id="format",
+        next_nodes={"default": "end"}
+    )
     
-    graph.add_edge(collector.id, "next", analyzer.id)
-    graph.add_edge(analyzer.id, "next", formatter.id)
+    end = TerminalNode(id="end")
+    
+    # Add nodes to graph
+    for node in [collector, analyzer, formatter, end]:
+        graph.add_node(node)
     
     # Add entry point
-    graph.add_entry_point("start", collector.id)
+    graph.add_entry_point("start", "collect")
     
-    # Create context and state
-    context = NodeContext()
-    state = NodeState(context=context)
+    # Initialize state
+    state = NodeState()
     
-    # Run graph
-    logger.info("🚀 Starting channel analysis workflow")
-    state = await graph.run("start", state)
+    print(f"\n{Colors.BOLD}📊 Starting Discord Channel Analysis:{Colors.RESET}")
+    print(f"{Colors.INFO}Channel: #ai-news{Colors.RESET}\n")
     
-    if state.errors:
-        logger.error("❌ Workflow completed with errors")
-        for node_id, error in state.errors.items():
-            logger.error(f"Node {node_id}: {error}")
+    start_time = datetime.now()
+    final_state = await graph.run("start", state)
+    
+    elapsed = (datetime.now() - start_time).total_seconds()
+    
+    if final_state.errors:
+        print(f"\n{Colors.ERROR}❌ Analysis failed with errors:{Colors.RESET}")
+        for node_id, error in final_state.errors.items():
+            print(f"{Colors.ERROR}Node {node_id}: {error}{Colors.RESET}")
     else:
-        logger.info("✅ Workflow completed successfully")
-        print("\nAnalysis Results:")
-        print(state.results["format"]["formatted"])
+        print(f"\n{Colors.SUCCESS}✨ Analysis Complete in {elapsed:.1f}s{Colors.RESET}")
+        if "format" in final_state.results:
+            print(final_state.results["format"]["formatted"])
 
 if __name__ == "__main__":
     import asyncio
