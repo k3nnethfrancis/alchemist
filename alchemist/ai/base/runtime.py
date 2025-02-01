@@ -1,6 +1,6 @@
 """Base Runtime Module for Agent Execution Environments"""
 
-from typing import Dict, Any, Optional, Union
+from typing import Dict, Any, Optional, Union, Callable
 from abc import ABC, abstractmethod
 from datetime import datetime
 from uuid import uuid4
@@ -31,12 +31,20 @@ class RuntimeConfig(BaseModel):
         system_prompt: System prompt configuration as string or Pydantic model
         tools: List of available tools
         platform_config: Additional platform-specific configuration
+        response_model: Optional Pydantic model for structured output
+        json_mode: Whether to enforce JSON output format
+        stream: Whether to use streaming mode
+        output_parser: Optional custom parser for processing responses
     """
     provider: str = "openai"
     model: str = "gpt-4o-mini"
     system_prompt: Union[str, BaseModel]
     tools: list = Field(default_factory=list)
     platform_config: Dict[str, Any] = Field(default_factory=dict)
+    response_model: Optional[type[BaseModel]] = None
+    json_mode: bool = False
+    stream: bool = False
+    output_parser: Optional[Callable] = None
 
 class BaseRuntime(ABC):
     """Abstract base for all runtime environments."""
@@ -83,18 +91,32 @@ class BaseChatRuntime(BaseRuntime):
         """Create agent instance."""
         from alchemist.ai.base.agent import BaseAgent
         return BaseAgent(
-            system_prompt=self.config.system_prompt,  # Updated to use system_prompt
-            tools=self.config.tools
+            system_prompt=self.config.system_prompt,
+            tools=self.config.tools,
+            response_model=self.config.response_model,
+            json_mode=self.config.json_mode,
+            stream=self.config.stream,
+            output_parser=self.config.output_parser
         )
     
-    async def process_message(self, message: str) -> str:
+    async def process_message(self, message: str) -> Union[str, BaseModel, Any]:
         """Process a single message and return the response."""
         if not self.current_session:
             self._start_session(platform="chat")
         try:
-            response = await self.agent._step(message)
-            logger.debug(f"Agent response: {response}")
-            return response
+            if self.config.stream:
+                chunks = []
+                async for chunk, tool in self.agent._stream_step(message):
+                    if tool:
+                        logger.info(f"[Calling Tool '{tool._name()}' with args {tool.args}]")
+                    elif chunk:
+                        chunks.append(chunk)
+                        yield chunk
+                logger.debug(f"Streamed response: {''.join(chunks)}")
+            else:
+                response = await self.agent._step(message)
+                logger.debug(f"Agent response: {response}")
+                return response
         except Exception as e:
             logger.exception("Error processing message")
             raise
@@ -113,8 +135,14 @@ class LocalRuntime(BaseChatRuntime):
                 if user_input.lower() in ['exit', 'quit']:
                     break
                     
-                response = await self.process_message(user_input)
-                print(f"\nAssistant: {response}")
+                print("\nAssistant: ", end="", flush=True)
+                if self.config.stream:
+                    async for chunk in self.process_message(user_input):
+                        print(chunk, end="", flush=True)
+                    print()
+                else:
+                    response = await self.process_message(user_input)
+                    print(response)
                 
             except KeyboardInterrupt:
                 logger.info("Chat session interrupted by user.")

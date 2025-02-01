@@ -63,7 +63,29 @@ alchemist/
 
 ---
 
-## 2. System Architecture Overview
+## 2. Core Architecture Updates
+
+1. **Agent System**
+   - Transitioned from persona-based to system prompt configuration
+   - BaseAgent now accepts either string or Pydantic model for system prompts
+   - Enhanced tool execution with both sync/async support
+   - Improved logging with AlchemistLoggingConfig
+
+2. **Runtime Framework**
+   - New RuntimeConfig class for unified configuration
+   - Provider-agnostic design (OpenPipe, Claude, etc.)
+   - Session management via Session model
+   - Hierarchy: BaseRuntime -> BaseChatRuntime -> Platform-specific runtimes
+
+3. **Discord Integration**
+   - Dedicated extension in alchemist/extensions/discord/
+   - DiscordRuntime extends BaseChatRuntime
+   - Supports both bot and local reader implementations
+   - Examples show different integration patterns
+
+---
+
+## 3. System Architecture Overview
 
 Alchemist is built around two major subsystems:
 
@@ -92,7 +114,7 @@ Information flows like this:
 
 ---
 
-## 3. Core Features & Capabilities
+## 4. Core Features & Capabilities
 
 1. **Provider-Agnostic LLM Integration**  
    - Mirascope allows us to easily switch between GPT-4o-mini, Claude-3-5-sonnet, OpenPipe, or other providers.  
@@ -199,55 +221,17 @@ Information flows like this:
 
 ---
 
-## 6. Example Usage
+## 6. Example Updates
 
-Below outlines common usage patterns with the enhanced Graph system:
-
-```python
-from alchemist.ai.graph import Graph, chain
-from alchemist.ai.graph.nodes import LLMNode, ToolNode, TerminalNode
-from alchemist.ai.graph.state import NodeState
-
-# 1. Using the chain utility for simple workflows
-workflow = chain([
-    LLMNode(
-        id="interpret",
-        input_map={"query": "user_input"},
-        prompt_template=interpret_prompt
-    ),
-    ToolNode(
-        id="fetch",
-        input_map={"search_term": "interpret.result"},
-        tool=search_tool
-    ),
-    TerminalNode(id="end")
-])
-
-# 2. Creating loops in workflows
-analyze_node = LLMNode(
-    id="analyze",
-    input_map={
-        "content": "fetch.result",
-        "previous_analysis": "analyze.result"  # Access previous iteration
-    },
-    loop_condition="needs_refinement",  # Will loop back if this condition is met
-    max_loops=3
-)
-
-# 3. Using nested key lookups
-request_node = ToolNode(
-    id="api_call",
-    input_map={
-        "user_id": "request.user.id",
-        "preferences": "user_data.settings.preferences"
-    }
-)
-
-# 4. Running the workflow
-state = NodeState()
-state.set_data("user_input", "What's the weather in Paris?")
-final_state = await graph.run("start", state)
-```
+New examples demonstrate:
+1. Custom tool usage (01_custom_tool_agent.py)
+2. Local runtime configuration (02_local_runtime_agent.py)
+3. Conversation history management (03_agent_steps_and_history.py)
+4. Research agent implementation (04_custom_runtime_agent.py)
+5. Discord integration patterns:
+   - Basic chatbot
+   - Local message reader
+   - Discord bot service
 
 ---
 

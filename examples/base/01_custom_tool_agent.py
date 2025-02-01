@@ -123,7 +123,8 @@ async def main():
     # Create the base agent with the custom system prompt and associated tool
     agent = BaseAgent(
         system_prompt=RON_BURGUNDY,
-        tools=[WeatherTool]
+        tools=[WeatherTool],
+        stream=True,
     )
 
     print("I'm Ron Burgundy, and I'll be your weather reporter today.")
@@ -132,6 +133,8 @@ async def main():
     print("-" * 50)
 
     await agent.run()
+    # or stream with:
+    # agent.stream_run()
 
 
 if __name__ == "__main__":
