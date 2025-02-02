@@ -1,6 +1,6 @@
 """Base Runtime Module for Agent Execution Environments"""
 
-from typing import Dict, Any, Optional, Union, Callable
+from typing import Dict, Any, Optional, Union, Callable, AsyncGenerator
 from abc import ABC, abstractmethod
 from datetime import datetime
 from uuid import uuid4
@@ -69,6 +69,7 @@ class BaseRuntime(ABC):
         pass
 
     def _start_session(self, platform: str) -> None:
+        """Start a new session."""
         self.current_session = Session(
             platform=platform,
             agent_config=self.config.model_dump()
@@ -89,7 +90,6 @@ class BaseChatRuntime(BaseRuntime):
     
     def _create_agent(self):
         """Create agent instance."""
-        from alchemist.ai.base.agent import BaseAgent
         return BaseAgent(
             system_prompt=self.config.system_prompt,
             tools=self.config.tools,
@@ -99,20 +99,32 @@ class BaseChatRuntime(BaseRuntime):
             output_parser=self.config.output_parser
         )
     
-    async def process_message(self, message: str) -> Union[str, BaseModel, Any]:
-        """Process a single message and return the response."""
+    async def process_message(self, message: str) -> Union[AsyncGenerator[str, None], str, BaseModel, Any]:
+        """Process a single message and return the response.
+        
+        Args:
+            message: The user's message to process
+            
+        Returns:
+            Union[AsyncGenerator[str, None], str, BaseModel, Any]:
+                If streaming is enabled, returns an async generator yielding chunks
+                Otherwise returns the complete response
+        """
         if not self.current_session:
             self._start_session(platform="chat")
+            
         try:
             if self.config.stream:
-                chunks = []
-                async for chunk, tool in self.agent._stream_step(message):
-                    if tool:
-                        logger.info(f"[Calling Tool '{tool._name()}' with args {tool.args}]")
-                    elif chunk:
-                        chunks.append(chunk)
-                        yield chunk
-                logger.debug(f"Streamed response: {''.join(chunks)}")
+                async def stream_response():
+                    chunks = []
+                    async for chunk, tool in self.agent._stream_step(message):
+                        if tool:
+                            logger.info(f"[Calling Tool '{tool._name()}' with args {tool.args}]")
+                        elif chunk:
+                            chunks.append(chunk)
+                            yield chunk
+                    logger.debug(f"Streamed response: {''.join(chunks)}")
+                return stream_response()
             else:
                 response = await self.agent._step(message)
                 logger.debug(f"Agent response: {response}")
@@ -137,7 +149,7 @@ class LocalRuntime(BaseChatRuntime):
                     
                 print("\nAssistant: ", end="", flush=True)
                 if self.config.stream:
-                    async for chunk in self.process_message(user_input):
+                    async for chunk in await self.process_message(user_input):
                         print(chunk, end="", flush=True)
                     print()
                 else:

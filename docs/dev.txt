@@ -1,0 +1,34 @@
+## 4. Core Features & Capabilities
+
+1. **Provider-Agnostic LLM Integration**  
+   - Mirascope allows us to easily switch between GPT-4o-mini, Claude-3-5-sonnet, OpenPipe, or other providers.  
+   - The agent code uses `_call` or `_step` to handle the conversation.  
+
+2. **Structured Output Patterns**
+   - Use Pydantic models for all structured outputs
+   - BaseAgent has built-in support for structured outputs:
+     ```python
+     # Define your response model
+     class Car(BaseModel):
+         make: str = Field(..., description="The manufacturer of the car")
+         model: str = Field(..., description="The model name of the car")
+         year: int = Field(..., description="The year the car was manufactured")
+
+     # Use it directly in the agent
+     agent = BaseAgent(response_model=Car)
+     response = await agent._step("Tell me about the Toyota Camry")
+     # response is already a validated Car instance
+     ```
+   - No need for manual JSON parsing or validation
+   - No need for explicit JSON instructions in prompts
+   - The agent automatically:
+     * Adds JSON schema to system prompt
+     * Validates responses against the model
+     * Handles both string and dict responses
+     * Provides clear error messages
+
+3. **Tools & Action Nodes**  
+   - Tools (calculator, image generation, Discord, etc.) can be invoked either by the agent or directly from the Graph.  
+   - ActionNode adds pre/post hooks for more advanced workflows.  
+
+// ... existing code ... 

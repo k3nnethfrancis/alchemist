@@ -16,17 +16,9 @@ from typing import Tuple, Dict, Any, Optional, Protocol, runtime_checkable, TYPE
 from pydantic import BaseModel, Field, model_validator
 from alchemist.ai.base.logging import get_logger, LogComponent
 from alchemist.ai.graph.state import NodeStateProtocol
-import re
 
 if TYPE_CHECKING:
     from alchemist.ai.graph.state import NodeState
-
-@runtime_checkable
-class NodeStateProtocol(Protocol):
-    """Protocol defining the interface for NodeState."""
-    data: Dict[str, Any]
-    results: Dict[str, Any]
-    errors: Dict[str, str]
 
 # Get logger for node operations
 logger = get_logger(LogComponent.NODES)

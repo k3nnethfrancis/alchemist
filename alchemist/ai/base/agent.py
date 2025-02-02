@@ -35,10 +35,11 @@ Example:
 """
 
 import logging
-from typing import List, Any, Optional, Union, Callable, AsyncGenerator
+from typing import List, Any, Optional, Union, Callable, AsyncGenerator, Dict
 from pydantic import BaseModel, Field, ValidationError
 import inspect
 # import lilypad
+from tenacity import retry, stop_after_attempt, wait_exponential
 from mirascope.core import (
     BaseMessageParam,
     BaseTool,
@@ -163,8 +164,11 @@ class BaseAgent(BaseModel):
     )
 
     # @lilypad.generation()
+    @retry(
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=1, min=4, max=10),
+    )
     @openai.call("gpt-4o-mini", client=OpenPipeClient())
-    # @openai.call("gpt-4o-mini")
     def _call(self, query: str) -> BaseDynamicConfig:
         """Make an OpenPipe API call with the current conversation state.
         
@@ -184,6 +188,7 @@ class BaseAgent(BaseModel):
                 # Add explicit JSON format instructions
                 system_content += "\n\nYou must respond with a valid JSON object."
                 if self.response_model:
+                    self.json_mode = True # set json_mode to True if response_model is set
                     schema = self.response_model.model_json_schema()
                     system_content += f" Match this exact schema:\n{schema}\n"
                     system_content += "\nExample response format:\n"
@@ -221,6 +226,10 @@ class BaseAgent(BaseModel):
 
         return config
 
+    @retry(
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=1, min=4, max=10),
+    )
     async def _step(self, query: str) -> Union[str, BaseModel, Any]:
         """Execute a single step of agent interaction.
         
@@ -375,6 +384,10 @@ class BaseAgent(BaseModel):
         ]
         return {"messages": messages, "tools": self.tools}  # Fixed tools parameter
 
+    @retry(
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=1, min=4, max=10),
+    )
     async def _stream_step(self, query: str) -> AsyncGenerator[tuple[Optional[str], Optional[BaseTool]], None]:
         """Execute a streaming step of agent interaction.
         
@@ -411,6 +424,50 @@ class BaseAgent(BaseModel):
             async for chunk, tool in self._stream_step(""):
                 yield chunk, tool
 
+    # async def use_tool(self, tool_class: type[BaseTool], args: Dict[str, Any]) -> Any:
+    #     """Execute a tool directly with the given arguments.
+        
+    #     This method allows direct tool execution without going through the LLM.
+    #     Useful for when we know exactly which tool to use and with what arguments.
+        
+    #     Args:
+    #         tool_class: The tool class to instantiate
+    #         args: Arguments to pass to the tool
+            
+    #     Returns:
+    #         Any: The result of the tool execution
+            
+    #     Raises:
+    #         ValueError: If the tool class is not available to this agent
+    #         Exception: Any exception raised by the tool during execution
+    #     """
+    #     if tool_class not in self.tools:
+    #         raise ValueError(f"Tool {tool_class.__name__} not available to this agent")
+            
+    #     try:
+    #         # Create tool instance with args
+    #         tool = tool_class(**args)
+            
+    #         # Log tool execution
+    #         if self.logging_config.show_tool_calls or \
+    #            self.logging_config.level <= VerbosityLevel.DEBUG:
+    #             log_verbose(logger, f"Executing tool {tool._name()} with args: {args}")
+            
+    #         # Execute tool
+    #         if inspect.iscoroutinefunction(tool.call):
+    #             result = await tool.call()
+    #         else:
+    #             result = tool.call()
+                
+    #         # Log result
+    #         logger.debug(f"Tool {tool._name()} result: {result}")
+            
+    #         return result
+            
+    #     except Exception as e:
+    #         logger.error(f"Error executing tool {tool_class.__name__}: {str(e)}")
+    #         raise
+
 
 if __name__ == "__main__":
     import asyncio
@@ -444,7 +501,7 @@ if __name__ == "__main__":
             }
         )
         
-        # # Test 1: Basic streaming without tools
+        # Test 1: Basic streaming without tools
         # print("\n=== Test 1: Basic Streaming ===")
         # stream_agent = BaseAgent(stream=True)
         # print("Testing streaming (type 'next' to continue, 'exit' to quit):")
@@ -515,10 +572,10 @@ if __name__ == "__main__":
         # print(f"Tags: {', '.join(response.tags)}")
 
         # Test 5c: JSON mode without response model
-        print("\n=== Test 5c: JSON Mode Only ===")
-        json_agent = BaseAgent(json_mode=True)
-        response = await json_agent._step("Tell me about machine learning.")
-        print(f"JSON Mode Only:\n{json.dumps(response, indent=2)}")
+        # print("\n=== Test 5c: JSON Mode Only ===")
+        # json_agent = BaseAgent(json_mode=True)
+        # response = await json_agent._step("Tell me about machine learning.")
+        # print(f"JSON Mode Only:\n{json.dumps(response, indent=2)}")
 
     # Run all tests
     print("\nStarting incremental agent tests...")

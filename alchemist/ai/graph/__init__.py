@@ -1,8 +1,15 @@
-"""Graph system for AI workflow orchestration."""
+"""Graph system for AI workflow orchestration.
+
+This package provides a lightweight framework for composing AI workflows using:
+- Directed graph-based orchestration
+- State management and persistence
+- Agent and action nodes
+- Subgraph composition
+- Parallel execution support
+"""
 
 from alchemist.ai.graph.base import Graph
-from alchemist.ai.graph.state import NodeState, NodeStatus, StateManager
-from alchemist.ai.graph.config import GraphConfig
+from alchemist.ai.graph.state import NodeState, NodeStatus
 from alchemist.ai.graph.nodes import (
     Node,
     ActionNode,
@@ -12,11 +19,12 @@ from alchemist.ai.graph.nodes import (
 )
 
 __all__ = [
+    # Core components
     'Graph',
     'NodeState',
     'NodeStatus',
-    'StateManager',
-    'GraphConfig',
+    
+    # Node types
     'Node',
     'ActionNode',
     'AgentNode',
